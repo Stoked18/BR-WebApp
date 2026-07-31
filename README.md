@@ -114,6 +114,11 @@ npm run dev
 
 Der weitergeleitete Port 3000 öffnet sich im Browser.
 
+Die Einrichtung dauert ein bis zwei Minuten. Läuft sie noch, meldet `npm run dev`
+möglicherweise `next: not found` — dann einfach abwarten oder die Einrichtung
+mit `npm run setup` erneut anstoßen. Das Skript ist wiederholbar und legt den
+Beispielbestand nur an, solange die Datenbank leer ist.
+
 ### Lokal
 
 Mit Docker:
@@ -231,6 +236,8 @@ sich stützen kann:
 | Anmeldung, Rollentrennung, Sitzungsablauf, Nachrücken, Beschlussfassung, Antragsportal | Chromium gegen die laufende Anwendung | bestanden |
 | Migration gegen leere Datenbank, anschließender Beispielbestand | `prisma migrate deploy` und Seed gegen frische PostgreSQL-Instanz | bestanden |
 | **Dockerfile und `docker-compose.yml`** | — | **ungetestet**, in der Entwicklungsumgebung stand kein Docker-Daemon zur Verfügung |
-| **Devcontainer für Codespaces** | Konfiguration validiert, Einrichtungsschritte einzeln ausgeführt | **nicht als Ganzes in Codespaces erprobt** |
+| Einrichtungsskript des Devcontainers | gegen leere und gegen befüllte Datenbank ausgeführt | bestanden |
+| Abhängigkeiten | `npm audit` | 0 Schwachstellen |
+| **Devcontainer als Ganzes in Codespaces** | — | **noch nicht erprobt** |
 
-Die beiden letzten Zeilen sind vor dem ersten Einsatz nachzuholen.
+Die fett hervorgehobenen Zeilen sind vor dem ersten Einsatz nachzuholen.

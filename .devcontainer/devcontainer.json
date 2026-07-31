@@ -19,6 +19,11 @@
   // Abhaengigkeiten, Schema und Beispielbestand in einem Rutsch.
   "postCreateCommand": "bash .devcontainer/einrichten.sh",
 
+  // Ohne diese Zeile gibt Codespaces das Terminal frei, waehrend
+  // postCreateCommand noch laeuft. Da "npm ci" das Verzeichnis node_modules
+  // zuerst loescht, liefe ein sofortiges "npm run dev" in "next: not found".
+  "waitFor": "postCreateCommand",
+
   "customizations": {
     "vscode": {
       "extensions": [
