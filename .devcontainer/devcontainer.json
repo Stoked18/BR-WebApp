@@ -1,0 +1,33 @@
+{
+  "name": "BR-Cockpit",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "entwicklung",
+  "workspaceFolder": "/workspace",
+
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "BR-Cockpit",
+      "onAutoForward": "openBrowser"
+    }
+  },
+
+  // Abhaengigkeiten, Schema und Beispielbestand in einem Rutsch.
+  "postCreateCommand": "bash .devcontainer/einrichten.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Prisma.prisma",
+        "bradlc.vscode-tailwindcss",
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  },
+
+  "remoteUser": "node"
+}

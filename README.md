@@ -100,7 +100,23 @@ Umgesetzt ist das dreifach:
 Die Trennung ist durch Tests abgesichert (`src/lib/authz.test.ts`) und im
 Browser gegen die laufende Anwendung geprüft.
 
-## Betrieb
+## Ausprobieren
+
+### Im Browser, ohne lokale Installation
+
+Das Projekt bringt eine Devcontainer-Beschreibung mit. In GitHub unter
+*Code → Codespaces → Create codespace on this branch* startet eine Umgebung, die
+Abhängigkeiten, Datenbankschema und Beispielbestand selbst einrichtet. Danach:
+
+```bash
+npm run dev
+```
+
+Der weitergeleitete Port 3000 öffnet sich im Browser.
+
+### Lokal
+
+Mit Docker:
 
 ```bash
 cp .env.example .env
@@ -109,29 +125,52 @@ openssl rand -hex 32   # -> DOKUMENT_SCHLUESSEL
 mkdir -p geheimnisse && openssl rand -base64 24 > geheimnisse/db_passwort
 
 docker compose up -d --build
+docker compose exec app node node_modules/.bin/tsx prisma/seed.ts   # Beispielbestand
 ```
 
-Die Anwendung lauscht auf `127.0.0.1:3000` und gehört hinter einen Reverse Proxy
-mit TLS. Einzelheiten in [docs/BETRIEB.md](docs/BETRIEB.md).
-
-### Entwicklung
+Mit vorhandenem Node 22 und PostgreSQL:
 
 ```bash
-npm install
+npm ci
+export DATABASE_URL="postgresql://benutzer:passwort@localhost:5432/brcockpit"
 npx prisma migrate deploy
-npm run db:seed     # Beispielbestand des beschriebenen Betriebs
+npm run db:seed
 npm run dev
 ```
 
-Die Beispielkonten nutzen das Passwort `Start!Passwort2026` und müssen es bei der
-ersten Anmeldung ändern. `m.kowalski@medtech-solingen.example` ist der Vorsitz,
-`personal@medtech-solingen.example` die Personalabteilung,
-`it-betrieb@medtech-solingen.example` zeigt die Sicht ohne Fachzugriff.
+### Konten des Beispielbestands
+
+Alle mit dem Passwort `Start!Passwort2026`, Wechsel bei der ersten Anmeldung.
+
+| Kennung | Rolle | Sieht |
+| --- | --- | --- |
+| `m.kowalski@medtech-solingen.example` | Vorsitz | alles |
+| `t.brenner@medtech-solingen.example` | Mitglied | Gremium, keine Leitungsrechte |
+| `c.vahle@medtech-solingen.example` | Ersatzmitglied | nur lesend |
+| `personal@medtech-solingen.example` | Personalabteilung | nur eigene Anträge |
+| `datenschutz@medtech-solingen.example` | DSB | nur Datenschutzmodul |
+| `it-betrieb@medtech-solingen.example` | IT-Betrieb | nur technische Kennzahlen |
+
+Der aufschlussreichste Test: Melden Sie sich als Vorsitz an, merken Sie sich die
+Adresse einer Sitzung, und rufen Sie dieselbe Adresse als Personalabteilung auf.
+Sie erhalten 404 — nicht „kein Zugriff", denn auch das wäre schon eine Auskunft
+über die Binnenstruktur des Gremiums.
+
+Ebenfalls sehenswert: eine Verhinderung melden und beobachten, welches
+Ersatzmitglied nachrückt und mit welcher Begründung; danach die Sitzung eröffnen
+und einen Beschluss mit sechs Ja-Stimmen unter „Mehrheit der Mitglieder"
+erfassen — er wird abgelehnt, obwohl die einfache Mehrheit gereicht hätte.
 
 ```bash
 npm test          # 100 Tests zur Rechts- und Berechtigungslogik
 npm run typecheck
 ```
+
+## Betrieb
+
+Für den Produktivbetrieb lauscht die Anwendung auf `127.0.0.1:3000` und gehört
+hinter einen Reverse Proxy mit TLS. Einzelheiten, Sicherung und die Verwahrung
+des Dokumentenschlüssels in [docs/BETRIEB.md](docs/BETRIEB.md).
 
 ## Aufbau
 
@@ -178,3 +217,20 @@ entscheidet das Gremium.
 ## Lizenz
 
 AGPL-3.0-or-later. Siehe [LICENSE](LICENSE).
+
+## Prüfstand
+
+Was mit welchem Verfahren geprüft wurde — damit erkennbar bleibt, worauf man
+sich stützen kann:
+
+| Bestandteil | Verfahren | Ergebnis |
+| --- | --- | --- |
+| Fristen, Feiertage, BetrVG-Schwellenwerte, Anwesenheit, Berechtigungen | 100 Modultests | bestanden |
+| Typisierung des gesamten Quelltexts | `tsc --noEmit` | fehlerfrei |
+| Erzeugung aller 22 Seiten | `next build` | fehlerfrei |
+| Anmeldung, Rollentrennung, Sitzungsablauf, Nachrücken, Beschlussfassung, Antragsportal | Chromium gegen die laufende Anwendung | bestanden |
+| Migration gegen leere Datenbank, anschließender Beispielbestand | `prisma migrate deploy` und Seed gegen frische PostgreSQL-Instanz | bestanden |
+| **Dockerfile und `docker-compose.yml`** | — | **ungetestet**, in der Entwicklungsumgebung stand kein Docker-Daemon zur Verfügung |
+| **Devcontainer für Codespaces** | Konfiguration validiert, Einrichtungsschritte einzeln ausgeführt | **nicht als Ganzes in Codespaces erprobt** |
+
+Die beiden letzten Zeilen sind vor dem ersten Einsatz nachzuholen.
