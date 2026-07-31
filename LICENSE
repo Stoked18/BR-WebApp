@@ -1,0 +1,27 @@
+BR-Cockpit – Verwaltungsanwendung für Betriebsräte
+Copyright (C) 2026 Betriebsrat Werk Solingen und Mitwirkende
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+Dieses Programm ist freie Software: Sie können es weitergeben und/oder
+verändern unter den Bedingungen der GNU Affero General Public License,
+veröffentlicht von der Free Software Foundation, entweder in Version 3 der
+Lizenz oder (nach Ihrer Wahl) einer späteren Version.
+
+Dieses Programm wird in der Hoffnung verbreitet, dass es nützlich ist, jedoch
+OHNE JEDE GEWÄHRLEISTUNG – sogar ohne die implizite Gewährleistung der
+MARKTGÄNGIGKEIT oder EIGNUNG FÜR EINEN BESTIMMTEN ZWECK. Einzelheiten regelt
+die GNU Affero General Public License.
+
+Sie sollten eine Kopie der GNU Affero General Public License zusammen mit
+diesem Programm erhalten haben. Ist das nicht der Fall, finden Sie sie unter
+<https://www.gnu.org/licenses/agpl-3.0.html>.
+
+--------------------------------------------------------------------------
+HINWEIS: Der vollständige Lizenztext ist dieser Datei noch beizufügen. Er
+konnte beim Anlegen des Projekts nicht abgerufen werden, weil kein
+Netzzugang zu gnu.org bestand. Vor einer Weitergabe des Programms ist der
+amtliche englische Text von <https://www.gnu.org/licenses/agpl-3.0.txt>
+unterhalb dieses Hinweises einzufügen – die AGPL verlangt die Mitlieferung
+des Lizenztextes.
+--------------------------------------------------------------------------

@@ -1,0 +1,71 @@
+# Betrieb im eigenen Rechenzentrum.
+#
+# Wichtig fuer die Sphaerentrennung nach §§ 78, 79 BetrVG: Der Dienst wird
+# nicht nach aussen veroeffentlicht. Der Anwendungsport ist an 127.0.0.1
+# gebunden; die Veroeffentlichung im Betriebsnetz uebernimmt ein vorgelagerter
+# Reverse Proxy mit TLS. Die Datenbank ist ausschliesslich im internen Netz
+# erreichbar und hat keine Portfreigabe zum Host.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: brcockpit
+      POSTGRES_USER: brapp
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_passwort
+      # Verhindert, dass initdb ohne Passwortpruefung anlegt
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    secrets:
+      - db_passwort
+    volumes:
+      - db_daten:/var/lib/postgresql/data
+      - ./sicherung:/sicherung
+    networks: [intern]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brapp -d brcockpit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      AUTH_SECRET: ${AUTH_SECRET}
+      DOKUMENT_SCHLUESSEL: ${DOKUMENT_SCHLUESSEL}
+      DATA_DIR: /var/lib/br-cockpit/data
+      BUNDESLAND: ${BUNDESLAND:-NW}
+    volumes:
+      - dokumente:/var/lib/br-cockpit/data
+    # Nur lokal erreichbar – die Veroeffentlichung macht der Reverse Proxy.
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [intern]
+    # Migrationen laufen beim Start, damit ein Update keinen Handgriff braucht.
+    command: >
+      sh -c "node node_modules/prisma/build/index.js migrate deploy && node server.js"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  db_daten:
+  dokumente:
+
+secrets:
+  db_passwort:
+    file: ./geheimnisse/db_passwort
+
+networks:
+  intern:
+    driver: bridge
+    internal: false

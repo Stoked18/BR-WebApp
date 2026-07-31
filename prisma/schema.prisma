@@ -1,0 +1,1127 @@
+// BR-Cockpit – Datenmodell
+// Fachsprache bewusst deutsch, weil die Begriffe unmittelbar an das BetrVG anknuepfen
+// und eine Uebersetzung Rechtsbegriffe verwaessern wuerde (z. B. "Verhinderung" != "absence").
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identitaet, Rollen, Zugriff
+// ---------------------------------------------------------------------------
+
+/// Systemrollen. Bewusst grob gehalten – die feine Berechtigung ergibt sich
+/// zusaetzlich aus der Gremien-/Ausschussmitgliedschaft (siehe src/lib/authz.ts).
+enum Systemrolle {
+  BR_VORSITZ
+  BR_STELLV
+  BR_MITGLIED
+  ERSATZMITGLIED
+  JAV
+  SBV
+  WIRTSCHAFTSAUSSCHUSS
+  AUFSICHTSRAT_AN
+  AG_PERSONAL /// Arbeitgeberseite HR – nur Antrags-/Anhoerungsportal
+  AG_FACHBEREICH /// Fuehrungskraft, die eine Massnahme beantragt
+  AG_ARBEITSSICHERHEIT /// Fachkraft f. Arbeitssicherheit, ASA
+  DSB /// Datenschutzbeauftragte:r – § 79a S. 3 BetrVG: Verschwiegenheit ggue. AG
+  IT_BETRIEB /// technischer Betrieb, KEIN fachlicher Datenzugriff
+  AUDIT /// revisionssichere Einsicht ins Protokoll, keine Inhalte
+}
+
+model Benutzer {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  anzeigename    String
+  passwortHash   String?
+  rollen         Systemrolle[]
+  aktiv          Boolean  @default(true)
+  passwortWechsel Boolean @default(true)
+  mfaSecret      String?
+  letzterLogin   DateTime?
+  gesperrtBis    DateTime?
+  fehlversuche   Int      @default(0)
+  /// Externe Identitaet (Keycloak/OIDC), wenn SSO genutzt wird
+  oidcSubject    String?  @unique
+  erstelltAm     DateTime @default(now())
+  geaendertAm    DateTime @updatedAt
+
+  person   Person? @relation(fields: [personId], references: [id])
+  personId String? @unique
+
+  sitzungenGeleitet Sitzung[]        @relation("Sitzungsleitung")
+  auditEintraege    AuditEintrag[]
+  hochgeladeneDokumente Dokument[]   @relation("DokumentUploader")
+  gestellteVorgaenge Vorgang[]       @relation("VorgangEinreicher")
+  aufgabenErstellt  Aufgabe[]        @relation("AufgabeErsteller")
+  sessions          Sitzungstoken[]
+
+  @@index([aktiv])
+}
+
+model Sitzungstoken {
+  id          String   @id @default(cuid())
+  benutzer    Benutzer @relation(fields: [benutzerId], references: [id], onDelete: Cascade)
+  benutzerId  String
+  tokenHash   String   @unique
+  laeuftAbAm  DateTime
+  erstelltAm  DateTime @default(now())
+  ipHash      String?
+  userAgent   String?
+  widerrufen  Boolean  @default(false)
+
+  @@index([benutzerId])
+  @@index([laeuftAbAm])
+}
+
+// ---------------------------------------------------------------------------
+// Betrieb, Amtsperiode, Personen
+// ---------------------------------------------------------------------------
+
+model Betrieb {
+  id                String  @id @default(cuid())
+  name              String
+  ort               String
+  bundesland        String  @default("NW") /// steuert Feiertagsberechnung (Fristen!)
+  /// Beschaeftigtenzahl i. S. d. § 9 BetrVG (wahlberechtigte Arbeitnehmer)
+  anzahlWahlberechtigte Int
+  /// Gesamtzahl Beschaeftigte (fuer § 38, § 106, DrittelbG)
+  anzahlBeschaeftigte   Int
+  tarifgebunden     Boolean @default(false)
+  tarifvertrag      String?
+  konzernName       String?
+  boersennotiert    Boolean @default(false)
+  erstelltAm        DateTime @default(now())
+
+  amtsperioden Amtsperiode[]
+  gremien      Gremium[]
+  schichtmodelle Schichtmodell[]
+}
+
+model Amtsperiode {
+  id         String   @id @default(cuid())
+  betrieb    Betrieb  @relation(fields: [betriebId], references: [id])
+  betriebId  String
+  bezeichnung String
+  beginn     DateTime
+  ende       DateTime
+  /// Regelamtszeit 4 Jahre, § 21 BetrVG
+  wahltag    DateTime?
+  /// Personenwahl (Mehrheitswahl) vs. Listenwahl – bestimmt das Nachrueckverfahren, § 25 Abs. 2 BetrVG
+  wahlverfahren Wahlverfahren @default(PERSONENWAHL)
+  aktiv      Boolean  @default(false)
+
+  mitgliedschaften Mitgliedschaft[]
+  wahlergebnisse   Wahlergebnis[]
+  schulungen       Schulung[]
+
+  @@index([betriebId, aktiv])
+}
+
+enum Wahlverfahren {
+  PERSONENWAHL /// Mehrheitswahl – Nachruecken nach Stimmenzahl, § 25 Abs. 2 S. 2 BetrVG
+  LISTENWAHL /// Verhaeltniswahl – Nachruecken aus derselben Vorschlagsliste, § 25 Abs. 2 S. 1 BetrVG
+}
+
+enum Geschlecht {
+  WEIBLICH
+  MAENNLICH
+  DIVERS
+  KEINE_ANGABE
+}
+
+model Person {
+  id            String   @id @default(cuid())
+  vorname       String
+  nachname      String
+  /// Personalnummer – Pseudonym fuer Vorgaenge; Klarnamen nur wo erforderlich
+  personalnummer String? @unique
+  email         String?
+  telefon       String?
+  abteilung     String?
+  kostenstelle  String?
+  geschlecht    Geschlecht @default(KEINE_ANGABE)
+  eintrittsdatum DateTime?
+  austrittsdatum DateTime?
+  aktiv         Boolean  @default(true)
+  bemerkung     String?
+  erstelltAm    DateTime @default(now())
+  geaendertAm   DateTime @updatedAt
+
+  benutzer         Benutzer?
+  mitgliedschaften Mitgliedschaft[]
+  ausschussMitgliedschaften AusschussMitgliedschaft[]
+  funktionen       Funktion[]
+  teilnahmen       Teilnahme[]
+  verhinderungen   Verhinderung[]
+  wahlergebnisse   Wahlergebnis[]
+  schulungen       Schulung[]
+  aufgaben         Aufgabe[]        @relation("AufgabeZustaendig")
+  freistellungen   Freistellung[]
+  schichtzuordnung Schichtgruppe?   @relation(fields: [schichtgruppeId], references: [id])
+  schichtgruppeId  String?
+  sprechstunden    Sprechstunde[]
+
+  @@index([nachname, vorname])
+  @@index([aktiv])
+}
+
+// ---------------------------------------------------------------------------
+// Gremien und Ausschuesse
+// ---------------------------------------------------------------------------
+
+enum Gremiumstyp {
+  BETRIEBSRAT /// §§ 1 ff. BetrVG
+  GESAMTBETRIEBSRAT /// § 47 BetrVG
+  KONZERNBETRIEBSRAT /// § 54 BetrVG
+  EUROBETRIEBSRAT /// EBRG
+  JAV /// §§ 60 ff. BetrVG
+  SBV /// § 177 SGB IX
+  WIRTSCHAFTSAUSSCHUSS /// § 106 BetrVG
+  AUFSICHTSRAT /// DrittelbG / MitbestG
+}
+
+model Gremium {
+  id          String      @id @default(cuid())
+  betrieb     Betrieb     @relation(fields: [betriebId], references: [id])
+  betriebId   String
+  typ         Gremiumstyp
+  bezeichnung String
+  /// Soll-Groesse nach § 9 BetrVG bzw. Satzung
+  sollGroesse Int
+  aktiv       Boolean     @default(true)
+  /// Geschaeftsordnung nach § 36 BetrVG hinterlegt?
+  geschaeftsordnungDokumentId String?
+  /// Erlaubt die GO Video-/Telefonteilnahme? § 30 Abs. 2 BetrVG
+  videoteilnahmeErlaubt Boolean @default(false)
+
+  mitgliedschaften Mitgliedschaft[]
+  ausschuesse      Ausschuss[]
+  sitzungen        Sitzung[]
+  vorgaenge        Vorgang[]
+
+  @@index([betriebId, typ])
+}
+
+enum Mitgliedsstatus {
+  ORDENTLICH
+  ERSATZMITGLIED
+  AUSGESCHIEDEN
+}
+
+model Mitgliedschaft {
+  id            String   @id @default(cuid())
+  person        Person   @relation(fields: [personId], references: [id])
+  personId      String
+  gremium       Gremium  @relation(fields: [gremiumId], references: [id])
+  gremiumId     String
+  amtsperiode   Amtsperiode @relation(fields: [amtsperiodeId], references: [id])
+  amtsperiodeId String
+  status        Mitgliedsstatus @default(ORDENTLICH)
+  /// Rang in der Nachrueckreihenfolge (1 = naechstes Ersatzmitglied).
+  /// Bei Personenwahl aus der Stimmenzahl abgeleitet, § 25 Abs. 2 S. 2 BetrVG.
+  nachrueckRang Int?
+  beginn        DateTime
+  ende          DateTime?
+  /// Grund des Ausscheidens, § 24 BetrVG
+  austrittsgrund String?
+
+  @@unique([personId, gremiumId, amtsperiodeId])
+  @@index([gremiumId, status])
+}
+
+enum Funktionstyp {
+  VORSITZ /// § 26 BetrVG
+  STELLV_VORSITZ /// § 26 BetrVG
+  SCHRIFTFUEHRUNG /// fakultativ, ueber GO § 36
+  BETRIEBSAUSSCHUSS_MITGLIED /// § 27 BetrVG
+  AUSSCHUSS_VORSITZ
+  DATENSCHUTZKOORDINATION /// interne Zustaendigkeit, § 79a BetrVG
+  WAHLVORSTAND
+  SBV_VERTRAUENSPERSON
+  JAV_VORSITZ
+  AUFSICHTSRAT_MITGLIED
+}
+
+model Funktion {
+  id        String       @id @default(cuid())
+  person    Person       @relation(fields: [personId], references: [id])
+  personId  String
+  typ       Funktionstyp
+  /// optionaler Bezug auf Gremium bzw. Ausschuss
+  gremiumId   String?
+  ausschussId String?
+  ausschuss   Ausschuss? @relation(fields: [ausschussId], references: [id])
+  beginn    DateTime
+  ende      DateTime?
+  /// Beschluss, mit dem die Funktion uebertragen wurde
+  beschlussId String?
+  beschluss   Beschluss? @relation(fields: [beschlussId], references: [id])
+
+  @@index([personId, typ])
+  @@index([typ, ende])
+}
+
+/// Freistellungen nach § 38 BetrVG (700 Beschaeftigte => 2 Freistellungen)
+model Freistellung {
+  id        String   @id @default(cuid())
+  person    Person   @relation(fields: [personId], references: [id])
+  personId  String
+  umfang    Freistellungsumfang @default(VOLL)
+  /// Anteil bei Teilfreistellung in Prozent
+  prozent   Int?
+  beginn    DateTime
+  ende      DateTime?
+  beschlussId String?
+
+  @@index([personId])
+}
+
+enum Freistellungsumfang {
+  VOLL
+  TEILWEISE
+}
+
+enum Ausschusstyp {
+  BETRIEBSAUSSCHUSS /// § 27 BetrVG – ab 9 BR-Mitgliedern zwingend
+  WEITERER_AUSSCHUSS /// § 28 Abs. 1 BetrVG
+  ARBEITSGRUPPE /// § 28a BetrVG
+  WIRTSCHAFTSAUSSCHUSS /// § 106 BetrVG
+  ARBEITSSCHUTZAUSSCHUSS /// § 11 ASiG
+  AD_HOC /// befristete Arbeitsgruppe ohne Aufgabenuebertragung
+}
+
+model Ausschuss {
+  id          String       @id @default(cuid())
+  gremium     Gremium      @relation(fields: [gremiumId], references: [id])
+  gremiumId   String
+  typ         Ausschusstyp
+  bezeichnung String
+  beschreibung String?
+  /// Wurden Aufgaben zur selbstaendigen Erledigung uebertragen?
+  /// § 27 Abs. 2 S. 2 bzw. § 28 Abs. 1 S. 3 BetrVG – erfordert Beschluss mit
+  /// Mehrheit der Stimmen der Mitglieder des Betriebsrats und Schriftform.
+  aufgabenUebertragen Boolean @default(false)
+  /// Konkret uebertragene Aufgaben (Wortlaut des Uebertragungsbeschlusses)
+  uebertrageneAufgaben String?
+  uebertragungsBeschlussId String?
+  /// Darf der Ausschuss selbst bindende Beschluesse fassen?
+  beschlussbefugt Boolean @default(false)
+  sollGroesse Int?
+  aktiv       Boolean      @default(true)
+  erstelltAm  DateTime     @default(now())
+
+  mitglieder AusschussMitgliedschaft[]
+  sitzungen  Sitzung[]
+  funktionen Funktion[]
+  aufgaben   Aufgabe[]
+  vorgaenge  Vorgang[]
+
+  @@index([gremiumId, typ])
+}
+
+model AusschussMitgliedschaft {
+  id          String    @id @default(cuid())
+  ausschuss   Ausschuss @relation(fields: [ausschussId], references: [id], onDelete: Cascade)
+  ausschussId String
+  person      Person    @relation(fields: [personId], references: [id])
+  personId    String
+  /// Ersatzmitglied fuer diesen Ausschuss
+  ersatz      Boolean   @default(false)
+  vorsitz     Boolean   @default(false)
+  beginn      DateTime  @default(now())
+  ende        DateTime?
+
+  @@unique([ausschussId, personId])
+  @@index([personId])
+}
+
+// ---------------------------------------------------------------------------
+// Sitzungen, Tagesordnung, Beschluesse, Niederschrift
+// ---------------------------------------------------------------------------
+
+enum Sitzungsstatus {
+  GEPLANT
+  EINGELADEN
+  LAUFEND
+  ABGESCHLOSSEN
+  PROTOKOLL_ENTWURF
+  PROTOKOLL_FREIGEGEBEN
+  ABGESAGT
+}
+
+enum Sitzungsform {
+  PRAESENZ
+  VIDEO /// § 30 Abs. 2 BetrVG – nur nachrangig und unter Bedingungen
+  HYBRID
+}
+
+enum Sitzungsart {
+  ORDENTLICH /// § 29 Abs. 2 BetrVG
+  AUSSERORDENTLICH /// § 29 Abs. 3 BetrVG
+  AUSSCHUSS
+  BETRIEBSVERSAMMLUNG /// § 43 BetrVG
+  ABTEILUNGSVERSAMMLUNG /// § 42 Abs. 2 BetrVG
+  MONATSGESPRAECH /// § 74 Abs. 1 BetrVG
+  ASA /// § 11 ASiG
+}
+
+model Sitzung {
+  id          String        @id @default(cuid())
+  gremium     Gremium?      @relation(fields: [gremiumId], references: [id])
+  gremiumId   String?
+  ausschuss   Ausschuss?    @relation(fields: [ausschussId], references: [id])
+  ausschussId String?
+  art         Sitzungsart   @default(ORDENTLICH)
+  nummer      String /// z. B. "2026/07"
+  titel       String?
+  beginn      DateTime
+  ende        DateTime?
+  ort         String?
+  form        Sitzungsform  @default(PRAESENZ)
+  /// Zugangsdaten der Videokonferenz – nur fuer Teilnahmeberechtigte sichtbar
+  videoLink   String?
+  status      Sitzungsstatus @default(GEPLANT)
+
+  /// § 29 Abs. 2 BetrVG: Einladung unter Mitteilung der Tagesordnung
+  einladungVersendetAm DateTime?
+  ladungsfristTage     Int      @default(7)
+  /// § 30 Abs. 2 Nr. 3 BetrVG: Widerspruch von mind. 1/4 der Mitglieder gegen Videositzung
+  widerspruchVideoAnzahl Int    @default(0)
+  /// Nichtoeffentlichkeit gem. § 30 Abs. 1 S. 4 BetrVG bestaetigt
+  nichtoeffentlichkeitBestaetigt Boolean @default(false)
+
+  leitung     Benutzer?     @relation("Sitzungsleitung", fields: [leitungId], references: [id])
+  leitungId   String?
+
+  /// Beschlussfaehigkeit nach § 33 Abs. 2 BetrVG zum Zeitpunkt der Feststellung
+  beschlussfaehig Boolean?
+  anwesendZahl    Int?
+  erforderlichZahl Int?
+
+  erstelltAm  DateTime      @default(now())
+  geaendertAm DateTime      @updatedAt
+
+  tops          Tagesordnungspunkt[]
+  teilnahmen    Teilnahme[]
+  verhinderungen Verhinderung[]
+  niederschrift Niederschrift?
+  aufgaben      Aufgabe[]
+
+  @@index([gremiumId, beginn])
+  @@index([ausschussId, beginn])
+  @@index([status])
+}
+
+enum Topstatus {
+  OFFEN
+  IN_BERATUNG
+  BESCHLOSSEN
+  VERTAGT
+  ZURUECKGEZOGEN
+  ZUR_KENNTNIS
+}
+
+enum Vertraulichkeit {
+  OEFFENTLICH /// z. B. Aushang, Betriebsversammlung
+  INTERN_BR /// nur Gremium
+  VERTRAULICH /// § 79 BetrVG – Betriebs-/Geschaeftsgeheimnis
+  PERSONENBEZOGEN /// Einzelfaelle, Art. 9 DSGVO moeglich
+}
+
+model Tagesordnungspunkt {
+  id          String  @id @default(cuid())
+  sitzung     Sitzung @relation(fields: [sitzungId], references: [id], onDelete: Cascade)
+  sitzungId   String
+  nummer      Int
+  titel       String
+  beschreibung String?
+  /// Wer hat den TOP beantragt (§ 29 Abs. 3: 1/4 der Mitglieder oder AG)
+  antragstellerPersonId String?
+  zeitbudgetMin Int?
+  status      Topstatus @default(OFFEN)
+  vertraulichkeit Vertraulichkeit @default(INTERN_BR)
+  /// Bezug zu einem laufenden Vorgang (z. B. Anhoerung § 102)
+  vorgang     Vorgang? @relation(fields: [vorgangId], references: [id])
+  vorgangId   String?
+
+  beschluesse Beschluss[]
+  aufgaben    Aufgabe[]
+  dokumente   Dokument[]
+
+  @@unique([sitzungId, nummer])
+  @@index([vorgangId])
+}
+
+enum Abstimmungsart {
+  OFFEN
+  GEHEIM
+}
+
+enum Beschlussergebnis {
+  ANGENOMMEN
+  ABGELEHNT
+  VERTAGT
+  NICHT_BESCHLUSSFAEHIG
+}
+
+model Beschluss {
+  id        String   @id @default(cuid())
+  top       Tagesordnungspunkt @relation(fields: [topId], references: [id], onDelete: Cascade)
+  topId     String
+  /// Fortlaufendes Aktenzeichen, z. B. "BR-2026-014"
+  aktenzeichen String @unique
+  /// Wortlaut des Beschlusses – § 34 Abs. 1 S. 2 BetrVG verlangt den Wortlaut
+  wortlaut  String
+  rechtsgrundlage String? /// z. B. "§ 99 Abs. 2 Nr. 1 BetrVG"
+  art       Abstimmungsart @default(OFFEN)
+  jaStimmen Int
+  neinStimmen Int
+  enthaltungen Int
+  /// Zahl der bei der Abstimmung anwesenden stimmberechtigten Mitglieder
+  anwesendStimmberechtigt Int
+  /// Erforderliche Mehrheit – Regelfall einfache Mehrheit der Anwesenden (§ 33 Abs. 1),
+  /// Sonderfall Mehrheit der Mitglieder (z. B. § 27 Abs. 2, § 28 Abs. 1, § 76a Abs. 4)
+  mehrheitserfordernis Mehrheitserfordernis @default(EINFACHE_MEHRHEIT_ANWESENDE)
+  ergebnis  Beschlussergebnis
+  gefasstAm DateTime
+  bemerkung String?
+  /// Umsetzungsnachweis
+  umgesetztAm DateTime?
+
+  funktionen Funktion[]
+  vorgang    Vorgang? @relation(fields: [vorgangId], references: [id])
+  vorgangId  String?
+
+  @@index([gefasstAm])
+  @@index([vorgangId])
+}
+
+enum Mehrheitserfordernis {
+  EINFACHE_MEHRHEIT_ANWESENDE /// § 33 Abs. 1 BetrVG
+  MEHRHEIT_DER_MITGLIEDER /// z. B. § 27 Abs. 2 S. 2, § 28 Abs. 1 S. 3 BetrVG
+  ZWEI_DRITTEL
+}
+
+enum Teilnahmestatus {
+  /// Geladen, aber die Sitzung hat noch nicht stattgefunden. Zaehlt fuer die
+  /// Prognose, nicht fuer die Beschlussfaehigkeit nach § 33 Abs. 2 BetrVG.
+  GELADEN
+  ANWESEND
+  ENTSCHULDIGT
+  UNENTSCHULDIGT
+  TEILWEISE
+  VERTRETEN /// durch Ersatzmitglied
+}
+
+enum Teilnahmerolle {
+  ORDENTLICHES_MITGLIED
+  ERSATZMITGLIED
+  SBV /// § 32 BetrVG – Teilnahmerecht
+  JAV /// § 67 BetrVG
+  ARBEITGEBER /// § 29 Abs. 4 BetrVG – nur auf Einladung
+  GEWERKSCHAFT /// § 31 BetrVG – auf Antrag von 1/4 der Mitglieder
+  SACHVERSTAENDIGER /// § 80 Abs. 3 BetrVG
+  GAST
+  SCHRIFTFUEHRUNG
+}
+
+model Teilnahme {
+  id        String  @id @default(cuid())
+  sitzung   Sitzung @relation(fields: [sitzungId], references: [id], onDelete: Cascade)
+  sitzungId String
+  person    Person  @relation(fields: [personId], references: [id])
+  personId  String
+  rolle     Teilnahmerolle @default(ORDENTLICHES_MITGLIED)
+  status    Teilnahmestatus @default(ANWESEND)
+  stimmberechtigt Boolean @default(true)
+  form      Sitzungsform @default(PRAESENZ)
+  von       DateTime?
+  bis       DateTime?
+  /// Unterschrift auf der Anwesenheitsliste, § 34 Abs. 1 S. 3 BetrVG
+  unterschriebenAm DateTime?
+  bemerkung String?
+
+  @@unique([sitzungId, personId])
+  @@index([personId])
+}
+
+/// Verhinderungsmeldung eines ordentlichen Mitglieds – loest das Nachruecken
+/// eines Ersatzmitglieds nach § 25 Abs. 1 BetrVG aus.
+model Verhinderung {
+  id         String   @id @default(cuid())
+  sitzung    Sitzung  @relation(fields: [sitzungId], references: [id], onDelete: Cascade)
+  sitzungId  String
+  person     Person   @relation(fields: [personId], references: [id])
+  personId   String
+  grund      Verhinderungsgrund
+  /// Freitext nur wenn zwingend – Gesundheitsdaten vermeiden!
+  bemerkung  String?
+  gemeldetAm DateTime @default(now())
+  /// Ermitteltes Ersatzmitglied
+  ersatzPersonId String?
+  ersatzGeladenAm DateTime?
+
+  @@unique([sitzungId, personId])
+}
+
+enum Verhinderungsgrund {
+  URLAUB
+  KRANKHEIT
+  DIENSTREISE
+  SCHICHT /// Schichtlage verhindert Teilnahme
+  BEFANGENHEIT /// rechtliche Verhinderung, z. B. eigene Angelegenheit
+  SONSTIGES
+}
+
+/// Sitzungsniederschrift, § 34 BetrVG
+model Niederschrift {
+  id        String  @id @default(cuid())
+  sitzung   Sitzung @relation(fields: [sitzungId], references: [id], onDelete: Cascade)
+  sitzungId String  @unique
+  inhalt    String  @db.Text
+  erstelltVonPersonId String?
+  /// Unterschrift des Vorsitzenden und eines weiteren Mitglieds, § 34 Abs. 1 S. 2
+  unterschriftVorsitzPersonId String?
+  unterschriftVorsitzAm DateTime?
+  unterschriftWeiteresPersonId String?
+  unterschriftWeiteresAm DateTime?
+  /// Frist fuer Einwendungen (Praxis: 2 Wochen ab Zugang)
+  einspruchsfristBis DateTime?
+  freigegebenAm DateTime?
+  /// Hash zur Integritaetssicherung der freigegebenen Fassung
+  inhaltHash String?
+
+  einsprueche Einspruch[]
+}
+
+model Einspruch {
+  id              String        @id @default(cuid())
+  niederschrift   Niederschrift @relation(fields: [niederschriftId], references: [id], onDelete: Cascade)
+  niederschriftId String
+  personId        String
+  text            String
+  eingegangenAm   DateTime      @default(now())
+  erledigtAm      DateTime?
+  erledigungsvermerk String?
+}
+
+// ---------------------------------------------------------------------------
+// Vorgaenge: Beteiligungsrechte, Anhoerungen, Fristen
+// ---------------------------------------------------------------------------
+
+enum Vorgangstyp {
+  EINSTELLUNG_99 /// § 99 BetrVG – Einstellung
+  VERSETZUNG_99 /// § 99 BetrVG – Versetzung
+  EINGRUPPIERUNG_99 /// § 99 BetrVG – Ein-/Umgruppierung
+  KUENDIGUNG_ORDENTLICH_102
+  KUENDIGUNG_AUSSERORDENTLICH_102
+  KUENDIGUNG_BR_MITGLIED_103 /// § 103 BetrVG – Zustimmungserfordernis
+  VORLAEUFIGE_MASSNAHME_100
+  MITBESTIMMUNG_87 /// soziale Angelegenheiten
+  UNTERRICHTUNG_80 /// § 80 Abs. 2 BetrVG
+  PERSONALPLANUNG_92
+  AUSSCHREIBUNG_93
+  AUSWAHLRICHTLINIE_95
+  ARBEITSPLATZGESTALTUNG_90_91
+  BERUFSBILDUNG_96_98
+  BETRIEBSAENDERUNG_111
+  WIRTSCHAFTSAUSSCHUSS_106
+  BESCHWERDE_85 /// § 85 BetrVG
+  EINIGUNGSSTELLE_76
+  SONSTIGES
+}
+
+enum Vorgangsstatus {
+  EINGEGANGEN
+  IN_PRUEFUNG
+  IM_AUSSCHUSS
+  AUF_TAGESORDNUNG
+  BESCHLOSSEN
+  BEANTWORTET
+  FRIST_VERSTRICHEN
+  ABGESCHLOSSEN
+  ZURUECKGEZOGEN
+}
+
+model Vorgang {
+  id          String      @id @default(cuid())
+  aktenzeichen String     @unique
+  typ         Vorgangstyp
+  titel       String
+  sachverhalt String?     @db.Text
+  gremium     Gremium?    @relation(fields: [gremiumId], references: [id])
+  gremiumId   String?
+  ausschuss   Ausschuss?  @relation(fields: [ausschussId], references: [id])
+  ausschussId String?
+
+  /// Antragsteller auf Arbeitgeberseite
+  einreicher   Benutzer?  @relation("VorgangEinreicher", fields: [einreicherId], references: [id])
+  einreicherId String?
+  fachbereich  String?
+
+  /// Betroffene Beschaeftigte – so sparsam wie moeglich (Art. 5 Abs. 1 lit. c DSGVO)
+  betroffenePersonalnummer String?
+  betroffeneInitialen      String?
+
+  eingegangenAm DateTime
+  /// Frist fuer die Reaktion des BR, berechnet nach §§ 187, 188, 193 BGB
+  fristBis      DateTime?
+  fristTage     Int?
+  fristArt      Fristart?
+  /// Tritt bei Fristablauf eine Zustimmungsfiktion ein? (§ 99 Abs. 3 S. 2 BetrVG)
+  zustimmungsfiktion Boolean @default(false)
+
+  status      Vorgangsstatus @default(EINGEGANGEN)
+  erledigtAm  DateTime?
+  /// Antwort des Betriebsrats
+  antwortText String?  @db.Text
+  antwortAm   DateTime?
+  vertraulichkeit Vertraulichkeit @default(PERSONENBEZOGEN)
+
+  /// Loeschdatum nach Loeschkonzept (Art. 5 Abs. 1 lit. e DSGVO)
+  loeschenAb  DateTime?
+  geloeschtAm DateTime?
+
+  erstelltAm  DateTime @default(now())
+  geaendertAm DateTime @updatedAt
+
+  tops        Tagesordnungspunkt[]
+  beschluesse Beschluss[]
+  aufgaben    Aufgabe[]
+  dokumente   Dokument[]
+  fristereignisse Fristereignis[]
+
+  @@index([status, fristBis])
+  @@index([typ])
+  @@index([eingegangenAm])
+}
+
+enum Fristart {
+  KALENDERTAGE
+  WERKTAGE
+  ARBEITSTAGE
+  WOCHEN
+}
+
+/// Protokolliert jede Fristberechnung nachvollziehbar (Beweissicherung).
+model Fristereignis {
+  id         String   @id @default(cuid())
+  vorgang    Vorgang  @relation(fields: [vorgangId], references: [id], onDelete: Cascade)
+  vorgangId  String
+  bezeichnung String
+  grundlage  String /// z. B. "§ 99 Abs. 3 S. 1 BetrVG i.V.m. §§ 187 Abs. 1, 188 Abs. 2 BGB"
+  startAm    DateTime
+  endeAm     DateTime
+  berechnung String @db.Text /// nachvollziehbare Herleitung inkl. beruecksichtigter Feiertage
+  erstelltAm DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Betriebsvereinbarungen
+// ---------------------------------------------------------------------------
+
+enum BVStatus {
+  ENTWURF
+  IN_VERHANDLUNG
+  BESCHLOSSEN
+  IN_KRAFT
+  GEKUENDIGT
+  NACHWIRKEND /// § 77 Abs. 6 BetrVG
+  AUSSER_KRAFT
+}
+
+model Betriebsvereinbarung {
+  id          String   @id @default(cuid())
+  nummer      String   @unique
+  titel       String
+  gegenstand  String?  @db.Text
+  rechtsgrundlage String? /// z. B. "§ 87 Abs. 1 Nr. 6 BetrVG"
+  status      BVStatus @default(ENTWURF)
+  abgeschlossenAm DateTime?
+  inkrafttretenAm DateTime?
+  befristetBis    DateTime?
+  kuendigungsfristMonate Int? @default(3) /// § 77 Abs. 5 BetrVG: drei Monate, sofern nichts anderes vereinbart
+  gekuendigtAm    DateTime?
+  gekuendigtVon   String?
+  ausserKraftAm   DateTime?
+  /// Wirkt die BV nach? Nur bei erzwingbarer Mitbestimmung, § 77 Abs. 6 BetrVG
+  nachwirkung     Boolean @default(false)
+  /// § 77 Abs. 3 BetrVG – Tarifvorbehalt geprueft?
+  tarifvorbehaltGeprueft Boolean @default(false)
+  tarifvorbehaltVermerk  String?
+  version     Int      @default(1)
+  vorgaengerId String?
+  beschlussId String?
+  bemerkung   String?
+  erstelltAm  DateTime @default(now())
+  geaendertAm DateTime @updatedAt
+
+  dokumente Dokument[]
+  aufgaben  Aufgabe[]
+
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Aufgaben
+// ---------------------------------------------------------------------------
+
+enum Aufgabenstatus {
+  OFFEN
+  IN_ARBEIT
+  WARTET
+  ERLEDIGT
+  ABGEBROCHEN
+}
+
+enum Prioritaet {
+  NIEDRIG
+  NORMAL
+  HOCH
+  KRITISCH
+}
+
+model Aufgabe {
+  id          String   @id @default(cuid())
+  titel       String
+  beschreibung String? @db.Text
+  status      Aufgabenstatus @default(OFFEN)
+  prioritaet  Prioritaet @default(NORMAL)
+  faelligAm   DateTime?
+  erledigtAm  DateTime?
+
+  zustaendig   Person?  @relation("AufgabeZustaendig", fields: [zustaendigId], references: [id])
+  zustaendigId String?
+  ausschuss    Ausschuss? @relation(fields: [ausschussId], references: [id])
+  ausschussId  String?
+  ersteller    Benutzer? @relation("AufgabeErsteller", fields: [erstellerId], references: [id])
+  erstellerId  String?
+
+  sitzung     Sitzung? @relation(fields: [sitzungId], references: [id])
+  sitzungId   String?
+  top         Tagesordnungspunkt? @relation(fields: [topId], references: [id])
+  topId       String?
+  vorgang     Vorgang? @relation(fields: [vorgangId], references: [id])
+  vorgangId   String?
+  betriebsvereinbarung Betriebsvereinbarung? @relation(fields: [bvId], references: [id])
+  bvId        String?
+
+  erstelltAm  DateTime @default(now())
+  geaendertAm DateTime @updatedAt
+
+  @@index([status, faelligAm])
+  @@index([zustaendigId])
+}
+
+// ---------------------------------------------------------------------------
+// Dokumente
+// ---------------------------------------------------------------------------
+
+model Dokument {
+  id          String   @id @default(cuid())
+  titel       String
+  dateiname   String
+  mimetype    String
+  groesseByte Int
+  /// Pfad im verschluesselten Ablagebereich
+  speicherpfad String
+  /// SHA-256 des Klartexts zur Integritaetspruefung
+  sha256      String
+  /// Wurde die Datei mit dem BR-Schluessel verschluesselt abgelegt?
+  verschluesselt Boolean @default(true)
+  vertraulichkeit Vertraulichkeit @default(INTERN_BR)
+  kategorie   String?
+
+  uploader    Benutzer? @relation("DokumentUploader", fields: [uploaderId], references: [id])
+  uploaderId  String?
+
+  top         Tagesordnungspunkt? @relation(fields: [topId], references: [id])
+  topId       String?
+  vorgang     Vorgang? @relation(fields: [vorgangId], references: [id])
+  vorgangId   String?
+  betriebsvereinbarung Betriebsvereinbarung? @relation(fields: [bvId], references: [id])
+  bvId        String?
+
+  loeschenAb  DateTime?
+  geloeschtAm DateTime?
+  erstelltAm  DateTime @default(now())
+
+  @@index([vertraulichkeit])
+  @@index([loeschenAb])
+}
+
+// ---------------------------------------------------------------------------
+// Schulungen § 37 Abs. 6 / Abs. 7 BetrVG
+// ---------------------------------------------------------------------------
+
+enum Schulungsgrundlage {
+  ERFORDERLICH_37_6 /// erforderliche Kenntnisse – kein Kontingent, Kosten trägt AG
+  GEEIGNET_37_7 /// geeignete Schulung – Kontingent 3 bzw. 4 Wochen je Amtszeit
+  SBV_179_SGB_IX
+  JAV_65_BETRVG
+}
+
+enum Schulungsstatus {
+  GEPLANT
+  BESCHLOSSEN
+  AG_INFORMIERT
+  BESTAETIGT
+  ABGELEHNT
+  DURCHGEFUEHRT
+  STORNIERT
+}
+
+model Schulung {
+  id          String   @id @default(cuid())
+  person      Person   @relation(fields: [personId], references: [id])
+  personId    String
+  amtsperiode Amtsperiode @relation(fields: [amtsperiodeId], references: [id])
+  amtsperiodeId String
+  titel       String
+  anbieter    String?
+  ort         String?
+  beginn      DateTime
+  ende        DateTime
+  /// Anrechenbare Arbeitstage (fuer das Kontingent nach § 37 Abs. 7 BetrVG)
+  tage        Int
+  grundlage   Schulungsgrundlage @default(ERFORDERLICH_37_6)
+  status      Schulungsstatus @default(GEPLANT)
+  kostenEuro  Decimal? @db.Decimal(10, 2)
+  beschlussId String?
+  /// Mitteilung an den Arbeitgeber, § 37 Abs. 6 S. 4 / Abs. 7 S. 2 BetrVG
+  agMitgeteiltAm DateTime?
+  bemerkung   String?
+
+  @@index([personId, amtsperiodeId])
+}
+
+// ---------------------------------------------------------------------------
+// Sprechstunden § 39 BetrVG
+// ---------------------------------------------------------------------------
+
+model Sprechstunde {
+  id        String   @id @default(cuid())
+  person    Person?  @relation(fields: [personId], references: [id])
+  personId  String?
+  beginn    DateTime
+  ende      DateTime
+  ort       String?
+  /// Auf welche Schichten zielt die Sprechstunde? (24/7-Betrieb!)
+  schichtbezug String?
+  bemerkung String?
+
+  @@index([beginn])
+}
+
+// ---------------------------------------------------------------------------
+// Schichtmodelle – Grundlage fuer Terminplanung nach § 30 Abs. 1 S. 2 BetrVG
+// ---------------------------------------------------------------------------
+
+model Schichtmodell {
+  id          String   @id @default(cuid())
+  betrieb     Betrieb  @relation(fields: [betriebId], references: [id])
+  betriebId   String
+  bezeichnung String
+  beschreibung String?
+  /// z. B. "vollkontinuierlich, 4-Schicht, 350 Tage"
+  tageProJahr Int      @default(350)
+  aktiv       Boolean  @default(true)
+
+  gruppen Schichtgruppe[]
+}
+
+model Schichtgruppe {
+  id            String   @id @default(cuid())
+  modell        Schichtmodell @relation(fields: [modellId], references: [id], onDelete: Cascade)
+  modellId      String
+  bezeichnung   String
+  /// Uhrzeiten als HH:MM, Auswertung in src/lib/schicht.ts
+  beginnUhrzeit String
+  endeUhrzeit   String
+
+  personen Person[]
+}
+
+// ---------------------------------------------------------------------------
+// Wahl (Personenwahl) und Aufsichtsratswahl
+// ---------------------------------------------------------------------------
+
+model Wahlergebnis {
+  id            String @id @default(cuid())
+  amtsperiode   Amtsperiode @relation(fields: [amtsperiodeId], references: [id])
+  amtsperiodeId String
+  person        Person @relation(fields: [personId], references: [id])
+  personId      String
+  stimmen       Int
+  gewaehlt      Boolean @default(false)
+  /// Platz in der Nachrueckreihenfolge (nur fuer nicht gewaehlte Bewerber)
+  nachrueckRang Int?
+  /// Sitz aufgrund der Geschlechterquote § 15 Abs. 2 BetrVG
+  quotenplatz   Boolean @default(false)
+
+  @@unique([amtsperiodeId, personId])
+  @@index([amtsperiodeId, stimmen])
+}
+
+enum AufsichtsratStatus {
+  VORBEREITUNG
+  WAHLVORSTAND_BESTELLT
+  WAHLAUSSCHREIBEN
+  KANDIDATUR
+  WAHL
+  KONSTITUIERT
+}
+
+/// Bildung des Aufsichtsrats mit Drittelbeteiligung (DrittelbG, ab 500 Beschaeftigten)
+model AufsichtsratProjekt {
+  id          String @id @default(cuid())
+  bezeichnung String
+  rechtsgrundlage String @default("DrittelbG")
+  /// Gesamtzahl der Aufsichtsratssitze
+  sitzeGesamt Int
+  /// Davon Arbeitnehmervertreter (mind. ein Drittel, § 4 DrittelbG)
+  sitzeArbeitnehmer Int
+  status      AufsichtsratStatus @default(VORBEREITUNG)
+  zieldatum   DateTime?
+  bemerkung   String? @db.Text
+  erstelltAm  DateTime @default(now())
+
+  meilensteine AufsichtsratMeilenstein[]
+}
+
+model AufsichtsratMeilenstein {
+  id        String @id @default(cuid())
+  projekt   AufsichtsratProjekt @relation(fields: [projektId], references: [id], onDelete: Cascade)
+  projektId String
+  bezeichnung String
+  rechtsgrundlage String?
+  faelligAm DateTime?
+  erledigtAm DateTime?
+  reihenfolge Int @default(0)
+
+  @@index([projektId, reihenfolge])
+}
+
+// ---------------------------------------------------------------------------
+// Datenschutz: Verzeichnis der Verarbeitungstaetigkeiten, Loeschkonzept, Audit
+// ---------------------------------------------------------------------------
+
+/// Art. 30 DSGVO – der Arbeitgeber ist Verantwortlicher (§ 79a S. 2 BetrVG),
+/// der Betriebsrat fuehrt seinen Teil des Verzeichnisses eigenverantwortlich zu.
+model Verarbeitungstaetigkeit {
+  id            String @id @default(cuid())
+  bezeichnung   String
+  zweck         String @db.Text
+  rechtsgrundlage String /// z. B. "Art. 6 Abs. 1 lit. c DSGVO i.V.m. § 99 BetrVG"
+  betroffeneKategorien String @db.Text
+  datenkategorien      String @db.Text
+  empfaenger    String? @db.Text
+  drittlandtransfer Boolean @default(false)
+  drittlandDetails  String?
+  loeschfrist   String
+  tom           String? @db.Text
+  dsfaErforderlich Boolean @default(false)
+  dsfaVermerk   String? @db.Text
+  standAm       DateTime @default(now())
+
+  @@index([bezeichnung])
+}
+
+model Loeschregel {
+  id          String @id @default(cuid())
+  entitaet    String /// z. B. "Vorgang:KUENDIGUNG_ORDENTLICH_102"
+  bezeichnung String
+  aufbewahrungMonate Int
+  begruendung String @db.Text
+  aktiv       Boolean @default(true)
+  letzterLauf DateTime?
+
+  @@unique([entitaet])
+}
+
+enum Auditaktion {
+  ANMELDUNG
+  ANMELDUNG_FEHLGESCHLAGEN
+  ABMELDUNG
+  LESEN
+  ANLEGEN
+  AENDERN
+  LOESCHEN
+  EXPORT
+  FREIGABE
+  RECHTEAENDERUNG
+  LOESCHLAUF
+}
+
+/// Revisionssicheres Protokoll. Eintraege werden nur angehaengt und ueber eine
+/// Hash-Kette verkettet, damit nachtraegliche Manipulation erkennbar wird.
+model AuditEintrag {
+  id          String   @id @default(cuid())
+  zeitpunkt   DateTime @default(now())
+  benutzer    Benutzer? @relation(fields: [benutzerId], references: [id])
+  benutzerId  String?
+  benutzerName String?
+  aktion      Auditaktion
+  entitaet    String
+  entitaetId  String?
+  details     String?  @db.Text
+  ipHash      String?
+  /// Verkettung: sha256(vorherigerHash + Nutzdaten)
+  vorherigerHash String?
+  hash        String
+
+  @@index([zeitpunkt])
+  @@index([entitaet, entitaetId])
+  @@index([benutzerId])
+}
+
+/// Betroffenenrechte nach Art. 15 ff. DSGVO
+enum AnfrageTyp {
+  AUSKUNFT_15
+  BERICHTIGUNG_16
+  LOESCHUNG_17
+  EINSCHRAENKUNG_18
+  WIDERSPRUCH_21
+}
+
+enum AnfrageStatus {
+  EINGEGANGEN
+  IN_BEARBEITUNG
+  BEANTWORTET
+  ABGELEHNT
+}
+
+model Betroffenenanfrage {
+  id            String @id @default(cuid())
+  typ           AnfrageTyp
+  antragstellerName String
+  personalnummer String?
+  eingegangenAm DateTime @default(now())
+  /// Art. 12 Abs. 3 DSGVO: unverzueglich, spaetestens innerhalb eines Monats
+  fristBis      DateTime
+  status        AnfrageStatus @default(EINGEGANGEN)
+  beschreibung  String? @db.Text
+  antwort       String? @db.Text
+  beantwortetAm DateTime?
+  /// § 79a S. 3 BetrVG: Einbindung des DSB unter Wahrung der Vertraulichkeit
+  dsbEinbezogen Boolean @default(false)
+
+  @@index([status, fristBis])
+}
+
+// ---------------------------------------------------------------------------
+// Systemeinstellungen
+// ---------------------------------------------------------------------------
+
+model Einstellung {
+  schluessel String @id
+  wert       String @db.Text
+  beschreibung String?
+  geaendertAm DateTime @updatedAt
+}
