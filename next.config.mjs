@@ -15,14 +15,26 @@ const nextConfig = {
       bodySizeLimit: '25mb',
       // Next.js lehnt Formularuebermittlungen (Server Actions) mit
       // "Invalid Server Actions request" ab, wenn die Herkunftsadresse des
-      // Browsers nicht auf dieser Liste steht – ein CSRF-Schutz. Beim
-      // Ausprobieren ueber GitHub Codespaces kommt die Anfrage ueber eine
-      // externe *.app.github.dev-Domain herein, die sich von der Adresse
-      // unterscheidet, an der Next.js intern lauscht; ohne diesen Eintrag
-      // scheitert schon die Anmeldung. Fuer den eigenen Produktivnamen hinter
-      // einem Reverse Proxy die Umgebungsvariable
-      // ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE setzen (siehe .env.example).
-      allowedOrigins: ['*.app.github.dev', ...zusaetzlicheUrsprungsAdressen],
+      // Browsers (der Origin-Header) nicht zu einer bekannten Adresse passt –
+      // ein CSRF-Schutz. Zwei Faelle treten bei GitHub Codespaces auf:
+      //  1. Ein echter externer Browser-Tab auf der *.app.github.dev-Adresse,
+      //     bei dem Origin und der von Codespaces gesetzte x-forwarded-host
+      //     zwar uebereinstimmen sollten, es aber vereinzelt nicht tun.
+      //  2. VS Codes eingebaute Portvorschau ("Preview in Editor"), die zwar
+      //     durch denselben Tunnel geht (x-forwarded-host zeigt korrekt auf
+      //     *.app.github.dev), deren eingebetteter Browser dem Next.js-Server
+      //     als Origin aber "localhost:3000" meldet. Nachgewiesen anhand
+      //     einer echten Fehlermeldung: "`x-forwarded-host` header with value
+      //     `<name>.app.github.dev` does not match `origin` header with value
+      //     `localhost:3000`". Fuer den eigenen Produktivnamen hinter einem
+      //     Reverse Proxy die Umgebungsvariable
+      //     ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE setzen (siehe .env.example).
+      allowedOrigins: [
+        '*.app.github.dev',
+        'localhost:3000',
+        '127.0.0.1:3000',
+        ...zusaetzlicheUrsprungsAdressen,
+      ],
     },
   },
   async headers() {
