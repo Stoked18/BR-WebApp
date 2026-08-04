@@ -27,6 +27,7 @@ export default async function Uebersicht() {
   const darfVorgaenge = darf(benutzer, 'vorgang.lesen');
   const darfSitzungen = darf(benutzer, 'sitzung.lesen');
   const darfAufgaben = darf(benutzer, 'aufgabe.lesen');
+  const darfPlanen = darf(benutzer, 'sitzung.planen');
 
   const [betrieb, gremium, offeneVorgaenge, naechsteSitzung, offeneAufgaben, letzteTermine] =
     await Promise.all([
@@ -89,6 +90,7 @@ export default async function Uebersicht() {
     frist.setMonth(frist.getMonth() - t.turnusMonate);
     return {
       ...t,
+      art,
       letzter: letzter?.beginn ?? null,
       ueberfaellig: !letzter || letzter.beginn < frist,
     };
@@ -247,6 +249,14 @@ export default async function Uebersicht() {
                   <p className="mt-0.5 text-xs text-slate-500">
                     {t.grundlage} · zuletzt {t.letzter ? datum(t.letzter) : 'nicht erfasst'}
                   </p>
+                  {t.ueberfaellig && darfPlanen && (
+                    <Link
+                      href={`/sitzungen?neu=1&art=${t.art}`}
+                      className="mt-1 inline-block text-xs font-medium text-marke-700 hover:underline"
+                    >
+                      Termin ansetzen
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>

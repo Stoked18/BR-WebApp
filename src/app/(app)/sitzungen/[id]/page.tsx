@@ -14,6 +14,7 @@ import {
   meldeVerhinderung,
   stelleBeschlussfaehigkeitFest,
 } from './aktionen';
+import { vermerkeLadung } from '../aktionen';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,6 +86,10 @@ export default async function Sitzungsdetail({ params }: { params: Promise<{ id:
     (m) => !sitzung.verhinderungen.some((v) => v.personId === m.personId),
   );
 
+  // Verbleibende Kalendertage bis zum Termin – Grundlage fuer den Hinweis auf
+  // die Ladungsfrist der Geschaeftsordnung (§ 29 Abs. 2 S. 3 BetrVG nennt keine Zahl).
+  const tageBisSitzung = Math.ceil((sitzung.beginn.getTime() - Date.now()) / 86_400_000);
+
   const kannPlanen = darf(benutzer, 'sitzung.planen');
   const kannLeiten = darf(benutzer, 'sitzung.leiten');
   const kannBeschliessen = darf(benutzer, 'beschluss.erfassen');
@@ -125,6 +130,19 @@ export default async function Sitzungsdetail({ params }: { params: Promise<{ id:
             Nach § 29 Abs. 2 S. 3 BetrVG sind die Mitglieder rechtzeitig unter Mitteilung der
             Tagesordnung zu laden. Im vollkontinuierlichen Schichtbetrieb ist die Ladung so zu
             bemessen, dass sie auch Beschäftigte in der Nacht- und Wochenendschicht erreicht.
+            {tageBisSitzung !== null && (
+              <span className="mt-1 block">
+                {tageBisSitzung < 0
+                  ? 'Der Termin liegt bereits in der Vergangenheit.'
+                  : `Bis zum Termin sind es noch ${tageBisSitzung} Tag(e); die Geschäftsordnung sieht ` +
+                    `${sitzung.ladungsfristTage} Tage vor.` +
+                    (tageBisSitzung < sitzung.ladungsfristTage
+                      ? ' Die Ladungsfrist ist damit bereits unterschritten. Wird gleichwohl geladen, ' +
+                        'sollten alle Mitglieder der Verkürzung zustimmen – andernfalls sind die in ' +
+                        'der Sitzung gefassten Beschlüsse angreifbar.'
+                      : '')}
+              </span>
+            )}
           </Warnung>
         )}
       </div>
@@ -352,6 +370,35 @@ export default async function Sitzungsdetail({ params }: { params: Promise<{ id:
               </Marke>
             </div>
             <p className="mt-2 text-xs leading-relaxed text-slate-600">{lage.text}</p>
+
+            {kannPlanen && !sitzung.einladungVersendetAm && !abgeschlossen && (
+              <div className="mt-3 border-t border-slate-200 pt-3">
+                {sitzung.tops.length === 0 ? (
+                  // Kein Knopf ohne Tagesordnung: § 29 Abs. 2 S. 3 BetrVG verlangt die Ladung
+                  // *unter Mitteilung der Tagesordnung*. Die Server-Aktion weist den Vorgang
+                  // ohnehin ab; hier wird der Grund vorab erklaert, statt einen Fehler zu zeigen.
+                  <p className="text-xs leading-relaxed text-slate-500">
+                    Die Ladung lässt sich vermerken, sobald die Tagesordnung erfasst ist.
+                    § 29 Abs. 2 S. 3 BetrVG verlangt die Ladung unter Mitteilung der Tagesordnung.
+                  </p>
+                ) : (
+                  <form action={vermerkeLadung}>
+                    <input type="hidden" name="sitzungId" value={sitzung.id} />
+                    <Knopf variante="sekundaer">Ladung versandt – vermerken</Knopf>
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      Der Versand selbst erfolgt außerhalb der Anwendung. Hier wird nur festgehalten,
+                      wann geladen wurde – im Streitfall der entscheidende Nachweis.
+                    </p>
+                  </form>
+                )}
+              </div>
+            )}
+
+            {sitzung.einladungVersendetAm && (
+              <p className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-500">
+                Ladung vermerkt am {datum(sitzung.einladungVersendetAm)}.
+              </p>
+            )}
 
             {kannLeiten && lage.prognose && (
               <form action={stelleBeschlussfaehigkeitFest} className="mt-3">
