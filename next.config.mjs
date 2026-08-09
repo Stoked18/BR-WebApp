@@ -44,7 +44,15 @@ const nextConfig = {
         headers: [
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'Referrer-Policy', value: 'no-referrer' },
+          // "same-origin" statt "no-referrer": Bei no-referrer setzen Browser
+          // beim Absenden eines Formulars den Origin-Header auf "null". Next.js
+          // versucht darauf "new URL('null')" und quittiert die Anmeldung mit
+          // HTTP 500 – die Anwendung waere ohne JavaScript unbenutzbar. Mit
+          // same-origin bleibt der Verweis innerhalb der Anwendung erhalten und
+          // wird nach aussen weiterhin nicht mitgesendet; da die Anwendung
+          // ueberhaupt keine externen Adressen aufruft, geht dabei kein
+          // Datenschutz verloren.
+          { key: 'Referrer-Policy', value: 'same-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()' },
         ],
       },

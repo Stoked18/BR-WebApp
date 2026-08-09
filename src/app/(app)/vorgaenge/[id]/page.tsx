@@ -5,7 +5,15 @@ import { prisma } from '@/lib/prisma';
 import { verlangeRecht } from '@/lib/auth';
 import { darf } from '@/lib/authz';
 import { protokolliere } from '@/lib/audit';
-import { FRISTVORLAGEN, fristampel, verbleibendeTage, vorlageFuerVorgangstyp } from '@/lib/fristen';
+import {
+  FRISTVORLAGEN,
+  alsKalendertag,
+  berechneNachVorlage,
+  fristampel,
+  verbleibendeTage,
+  vorlageFuerVorgangstyp,
+} from '@/lib/fristen';
+import { gruppeVon, ruegewirkung, verfahrensstand } from '@/lib/vorgangsablauf';
 import { datum, datumZeit, relativeTage } from '@/lib/format';
 import { Fehler, Karte, Knopf, Marke, Rechtshinweis, Seitenkopf, Warnung } from '@/components/ui';
 import { STATUSTEXT, VORGANGSTYP } from '@/lib/vorgangstexte';
@@ -38,9 +46,16 @@ async function beantworte(formular: FormData) {
 }
 
 /**
- * Ruegt die unvollstaendige Unterrichtung. Das ist der wichtigste Hebel bei
- * § 99 BetrVG: Solange die Unterrichtung unvollstaendig ist, laeuft die
- * Wochenfrist nicht an und die Zustimmungsfiktion tritt nicht ein.
+ * Ruegt die unvollstaendige Unterrichtung.
+ *
+ * Die Rechtsfolge unterscheidet sich je nach Norm und wird deshalb aus
+ * ruegewirkung() abgeleitet, statt hier fest verdrahtet zu werden:
+ *
+ *  - § 99 BetrVG: die Wochenfrist laeuft erst ab vollstaendiger Unterrichtung.
+ *    Die Frist wird angehalten, die Zustimmungsfiktion tritt nicht ein.
+ *  - § 102 BetrVG: die Wochenfrist laeuft weiter. Die Ruege wird dokumentiert,
+ *    weil die unvollstaendige Anhoerung die Kuendigung unwirksam macht – der
+ *    Betriebsrat muss aber gleichwohl fristgerecht Stellung nehmen.
  */
 async function ruegeUnterrichtung(formular: FormData) {
   'use server';
@@ -51,32 +66,41 @@ async function ruegeUnterrichtung(formular: FormData) {
   if (!fehlend) return;
 
   const vorgang = await prisma.vorgang.findUniqueOrThrow({ where: { id } });
+  const wirkung = ruegewirkung(vorgang.typ);
+  if (!wirkung) throw new Error('Für diese Vorgangsart ist die Rüge der Unterrichtung nicht vorgesehen.');
+
+  const jetzt = new Date();
 
   await prisma.vorgang.update({
     where: { id },
     data: {
-      // Die Frist wird ausgesetzt, bis die Unterrichtung vervollstaendigt ist.
-      fristBis: null,
+      // Nur wo die Frist rechtlich nicht anlaeuft, wird sie auch ausgesetzt.
+      ...(wirkung.haeltFristAn ? { fristBis: null } : {}),
+      unterrichtungGeruegtAm: jetzt,
+      unterrichtungGeruegtInhalt: fehlend,
       status: 'IN_PRUEFUNG',
       sachverhalt:
-        `${vorgang.sachverhalt ?? ''}\n\n[${datum(new Date())}] Rüge der unvollständigen Unterrichtung ` +
-        `nach § 99 Abs. 1 BetrVG. Es fehlen: ${fehlend}. Die Frist des § 99 Abs. 3 S. 1 BetrVG ist ` +
-        `bis zur Vervollständigung nicht in Lauf gesetzt.`,
+        `${vorgang.sachverhalt ?? ''}\n\n[${datum(jetzt)}] Rüge der unvollständigen Unterrichtung ` +
+        `nach ${wirkung.norm}. Es fehlen: ${fehlend}.` +
+        (wirkung.haeltFristAn
+          ? ' Die Frist ist bis zur Vervollständigung nicht in Lauf gesetzt.'
+          : ' Die Frist läuft gleichwohl weiter; es ist fristgerecht Stellung zu nehmen.'),
     },
   });
 
   await prisma.fristereignis.create({
     data: {
       vorgangId: id,
-      bezeichnung: 'Fristlauf ausgesetzt – Unterrichtung unvollständig',
-      grundlage: '§ 99 Abs. 1 S. 1, 2 BetrVG',
-      startAm: new Date(),
-      endeAm: new Date(),
+      bezeichnung: wirkung.haeltFristAn
+        ? 'Fristlauf ausgesetzt – Unterrichtung unvollständig'
+        : 'Unvollständige Unterrichtung gerügt – Frist läuft weiter',
+      grundlage: wirkung.norm,
+      startAm: jetzt,
+      endeAm: vorgang.fristBis ?? jetzt,
       berechnung:
         `Der Betriebsrat hat gerügt, dass die Unterrichtung unvollständig ist. Es fehlen: ${fehlend}. ` +
-        `Nach § 99 Abs. 1 BetrVG setzt erst die vollständige Unterrichtung die Wochenfrist des ` +
-        `§ 99 Abs. 3 S. 1 BetrVG in Lauf. Die Frist wird daher zurückgesetzt und mit Eingang der ` +
-        `fehlenden Angaben neu berechnet.`,
+        wirkung.wirkung +
+        (wirkung.warnung ? ` ${wirkung.warnung}` : ''),
     },
   });
 
@@ -86,10 +110,121 @@ async function ruegeUnterrichtung(formular: FormData) {
     aktion: 'AENDERN',
     entitaet: 'Vorgang',
     entitaetId: id,
-    details: `Unvollständige Unterrichtung gerügt: ${fehlend}`,
+    details:
+      `Unvollständige Unterrichtung gerügt (${wirkung.norm}): ${fehlend}. ` +
+      (wirkung.haeltFristAn ? 'Frist ausgesetzt.' : 'Frist läuft weiter.'),
   });
 
   revalidatePath(`/vorgaenge/${id}`);
+  revalidatePath('/vorgaenge');
+}
+
+/**
+ * Vermerkt, dass der Arbeitgeber die fehlenden Angaben nachgereicht hat.
+ *
+ * Bei § 99 BetrVG beginnt damit die Wochenfrist neu zu laufen – ab dem Zugang
+ * der Vervollstaendigung, nicht ab dem urspruenglichen Eingang.
+ */
+async function vervollstaendigeUnterrichtung(formular: FormData) {
+  'use server';
+  const benutzer = await verlangeRecht('vorgang.bearbeiten');
+
+  const id = String(formular.get('id'));
+  const eingangRoh = String(formular.get('eingang') ?? '').trim();
+  const eingang = eingangRoh ? new Date(eingangRoh) : new Date();
+  if (Number.isNaN(eingang.getTime())) throw new Error('Der angegebene Zugang ist kein gültiges Datum.');
+
+  const vorgang = await prisma.vorgang.findUniqueOrThrow({ where: { id } });
+  const wirkung = ruegewirkung(vorgang.typ);
+  const vorlage = vorlageFuerVorgangstyp(vorgang.typ);
+
+  // Nur wo die Ruege die Frist angehalten hat, beginnt sie jetzt neu.
+  const neueFrist =
+    wirkung?.haeltFristAn && vorlage
+      ? berechneNachVorlage(vorlage.schluessel, alsKalendertag(eingang), 'NW')
+      : null;
+
+  await prisma.vorgang.update({
+    where: { id },
+    data: {
+      unterrichtungVervollstaendigtAm: eingang,
+      ...(neueFrist ? { fristBis: neueFrist.ablauf } : {}),
+    },
+  });
+
+  if (neueFrist) {
+    await prisma.fristereignis.create({
+      data: {
+        vorgangId: id,
+        bezeichnung: 'Frist neu berechnet – Unterrichtung vervollständigt',
+        grundlage: `${neueFrist.vorlage.grundlage} i.V.m. §§ 187 Abs. 1, 188 BGB`,
+        startAm: eingang,
+        endeAm: neueFrist.ablauf,
+        berechnung:
+          'Der Arbeitgeber hat die fehlenden Angaben nachgereicht. Die Frist läuft ab diesem ' +
+          `Zugang neu. ${neueFrist.herleitung}`,
+      },
+    });
+  }
+
+  await protokolliere({
+    benutzerId: benutzer.id,
+    benutzerName: benutzer.anzeigename,
+    aktion: 'AENDERN',
+    entitaet: 'Vorgang',
+    entitaetId: id,
+    details: `Unterrichtung vervollständigt am ${datum(eingang)}.${neueFrist ? ' Frist neu berechnet.' : ''}`,
+  });
+
+  revalidatePath(`/vorgaenge/${id}`);
+  revalidatePath('/vorgaenge');
+}
+
+/**
+ * Dokumentiert den Zugang der Stellungnahme beim Arbeitgeber.
+ *
+ * Fuer die Fristwahrung kommt es auf den Zugang an, nicht auf die Absendung
+ * (§ 130 BGB). Im Streit um die Rechtzeitigkeit einer Zustimmungsverweigerung
+ * oder eines Widerspruchs ist dieser Nachweis der entscheidende Punkt.
+ */
+async function dokumentiereZugang(formular: FormData) {
+  'use server';
+  const benutzer = await verlangeRecht('vorgang.bearbeiten');
+
+  const id = String(formular.get('id'));
+  const zugangRoh = String(formular.get('zugang') ?? '').trim();
+  const zugang = zugangRoh ? new Date(zugangRoh) : new Date();
+  if (Number.isNaN(zugang.getTime())) throw new Error('Der angegebene Zugang ist kein gültiges Datum.');
+
+  const vorgang = await prisma.vorgang.findUniqueOrThrow({ where: { id } });
+  if (!vorgang.antwortAm) {
+    throw new Error('Es ist noch keine Stellungnahme erfasst, deren Zugang dokumentiert werden könnte.');
+  }
+
+  const rechtzeitig = vorgang.fristBis ? zugang <= vorgang.fristBis : null;
+
+  await prisma.vorgang.update({
+    where: { id },
+    data: { antwortZugangAm: zugang, status: 'ABGESCHLOSSEN', erledigtAm: zugang },
+  });
+
+  await protokolliere({
+    benutzerId: benutzer.id,
+    benutzerName: benutzer.anzeigename,
+    aktion: 'AENDERN',
+    entitaet: 'Vorgang',
+    entitaetId: id,
+    details:
+      `Zugang der Stellungnahme beim Arbeitgeber am ${datum(zugang)} dokumentiert.` +
+      (rechtzeitig === null
+        ? ''
+        : rechtzeitig
+          ? ' Die Frist ist gewahrt.'
+          : ' Achtung: der Zugang liegt nach Fristablauf.'),
+  });
+
+  revalidatePath(`/vorgaenge/${id}`);
+  revalidatePath('/vorgaenge');
 }
 
 export default async function Vorgangsdetail({ params }: { params: Promise<{ id: string }> }) {
@@ -116,6 +251,29 @@ export default async function Vorgangsdetail({ params }: { params: Promise<{ id:
   const vorlage = vorlageFuerVorgangstyp(vorgang.typ);
   const offen = !['ABGESCHLOSSEN', 'BEANTWORTET', 'ZURUECKGEZOGEN'].includes(vorgang.status);
   const istNeunundneunzig = vorgang.typ.endsWith('_99');
+
+  const gruppe = gruppeVon(vorgang.typ);
+  const wirkung = ruegewirkung(vorgang.typ);
+  const kannBearbeiten = darf(benutzer, 'vorgang.bearbeiten');
+
+  const schritte = verfahrensstand({
+    typ: vorgang.typ,
+    eingegangenAm: vorgang.eingegangenAm,
+    unterrichtungGeruegtAm: vorgang.unterrichtungGeruegtAm,
+    unterrichtungVervollstaendigtAm: vorgang.unterrichtungVervollstaendigtAm,
+    aufTagesordnung: vorgang.tops.length > 0,
+    beschlussGefasst: vorgang.beschluesse.length > 0,
+    antwortAm: vorgang.antwortAm,
+    antwortZugangAm: vorgang.antwortZugangAm,
+    fristBis: vorgang.fristBis,
+  });
+
+  const SCHRITTFARBE = {
+    ERLEDIGT: 'border-emerald-400',
+    OFFEN: 'border-slate-300',
+    WARNUNG: 'border-amber-400',
+    ENTFAELLT: 'border-slate-200',
+  } as const;
 
   return (
     <>
@@ -198,10 +356,14 @@ export default async function Vorgangsdetail({ params }: { params: Promise<{ id:
             )
           )}
 
-          {istNeunundneunzig && offen && darf(benutzer, 'vorgang.bearbeiten') && (
+          {wirkung && offen && kannBearbeiten && !vorgang.unterrichtungGeruegtAm && (
             <Karte
               titel="Unvollständige Unterrichtung rügen"
-              hinweis="Setzt den Fristlauf zurück – der wirksamste Schutz gegen die Zustimmungsfiktion"
+              hinweis={
+                wirkung.haeltFristAn
+                  ? 'Hält den Fristlauf an – der wirksamste Schutz gegen die Zustimmungsfiktion'
+                  : 'Dokumentiert den Mangel – die Frist läuft dabei weiter'
+              }
             >
               <form action={ruegeUnterrichtung} className="space-y-3">
                 <input type="hidden" name="id" value={vorgang.id} />
@@ -210,9 +372,83 @@ export default async function Vorgangsdetail({ params }: { params: Promise<{ id:
                   rows={3}
                   required
                   className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Bewerbungsunterlagen aller Bewerber, Angaben zur vorgesehenen Eingruppierung, Auswirkungen auf die Belegschaft …"
+                  placeholder={
+                    gruppe === 'ANHOERUNG'
+                      ? 'Kündigungsgründe nicht hinreichend konkretisiert, Sozialdaten (Lebensalter, Betriebszugehörigkeit, Unterhaltspflichten) fehlen …'
+                      : 'Bewerbungsunterlagen aller Bewerber, Angaben zur vorgesehenen Eingruppierung, Auswirkungen auf die Belegschaft …'
+                  }
                 />
-                <Knopf variante="sekundaer">Rüge erfassen und Frist aussetzen</Knopf>
+                <p className="text-xs leading-relaxed text-slate-500">
+                  <span className="font-medium text-slate-700">{wirkung.norm}</span> · {wirkung.wirkung}
+                </p>
+                {wirkung.warnung && (
+                  <Warnung titel="Die Frist läuft trotz der Rüge weiter">{wirkung.warnung}</Warnung>
+                )}
+                <Knopf variante="sekundaer">
+                  {wirkung.haeltFristAn ? 'Rüge erfassen und Frist anhalten' : 'Rüge erfassen'}
+                </Knopf>
+              </form>
+            </Karte>
+          )}
+
+          {wirkung && vorgang.unterrichtungGeruegtAm && !vorgang.unterrichtungVervollstaendigtAm && kannBearbeiten && (
+            <Karte
+              titel="Unterrichtung vervollständigt"
+              hinweis={
+                wirkung.haeltFristAn
+                  ? 'Die Frist beginnt mit dem Zugang der Nachreichung neu'
+                  : 'Vermerk – die Frist bleibt unverändert'
+              }
+            >
+              <p className="mb-3 text-sm text-slate-700">
+                Gerügt am {datum(vorgang.unterrichtungGeruegtAm)}:{' '}
+                <span className="text-slate-600">{vorgang.unterrichtungGeruegtInhalt}</span>
+              </p>
+              <form action={vervollstaendigeUnterrichtung} className="space-y-3">
+                <input type="hidden" name="id" value={vorgang.id} />
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Zugang der nachgereichten Angaben
+                  </label>
+                  <input
+                    name="eingang"
+                    type="date"
+                    required
+                    className="mt-1 w-full max-w-xs rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  />
+                </div>
+                <Knopf variante="sekundaer">
+                  {wirkung.haeltFristAn ? 'Vervollständigung erfassen und Frist neu berechnen' : 'Vervollständigung erfassen'}
+                </Knopf>
+              </form>
+            </Karte>
+          )}
+
+          {vorgang.antwortAm && !vorgang.antwortZugangAm && kannBearbeiten && (
+            <Karte
+              titel="Zugang der Stellungnahme dokumentieren"
+              hinweis="Für die Fristwahrung kommt es auf den Zugang an, nicht auf die Absendung"
+            >
+              <form action={dokumentiereZugang} className="space-y-3">
+                <input type="hidden" name="id" value={vorgang.id} />
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Zugang beim Arbeitgeber
+                  </label>
+                  <input
+                    name="zugang"
+                    type="date"
+                    required
+                    className="mt-1 w-full max-w-xs rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  />
+                </div>
+                <p className="text-xs leading-relaxed text-slate-500">
+                  Maßgeblich ist der Zeitpunkt, zu dem die Stellungnahme in den Machtbereich des
+                  Arbeitgebers gelangt ist (§ 130 BGB). Im Streit um die Rechtzeitigkeit einer
+                  Zustimmungsverweigerung oder eines Widerspruchs ist dieser Nachweis entscheidend –
+                  Empfangsbekenntnis oder Eingangsstempel aufbewahren.
+                </p>
+                <Knopf variante="sekundaer">Zugang dokumentieren und Vorgang abschließen</Knopf>
               </form>
             </Karte>
           )}
@@ -240,6 +476,29 @@ export default async function Vorgangsdetail({ params }: { params: Promise<{ id:
         </div>
 
         <div className="space-y-6">
+          <Karte titel="Verfahrensstand" hinweis="Die Reihenfolge ist nicht beliebig">
+            <ol className="space-y-3">
+              {schritte.map((s, i) => (
+                <li key={s.bezeichnung} className={`border-l-2 pl-3 ${SCHRITTFARBE[s.status]}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <p
+                      className={`text-sm font-medium ${
+                        s.status === 'ERLEDIGT' ? 'text-slate-500' : 'text-slate-900'
+                      }`}
+                    >
+                      <span className="mr-1.5 tabular-nums text-slate-400">{i + 1}.</span>
+                      {s.bezeichnung}
+                    </p>
+                    {s.status === 'ERLEDIGT' && <Marke ton="gruen">erledigt</Marke>}
+                    {s.status === 'WARNUNG' && <Marke ton="gelb">beachten</Marke>}
+                  </div>
+                  {s.norm && <p className="mt-0.5 text-xs text-slate-400">{s.norm}</p>}
+                  <p className="mt-0.5 text-xs leading-relaxed text-slate-600">{s.vermerk}</p>
+                </li>
+              ))}
+            </ol>
+          </Karte>
+
           <Karte titel="Frist">
             {vorgang.fristBis ? (
               <>

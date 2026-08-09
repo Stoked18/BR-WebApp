@@ -5,25 +5,66 @@ import { fristampel, verbleibendeTage } from '@/lib/fristen';
 import { datum, relativeTage } from '@/lib/format';
 import { Karte, Kennzahl, Leer, Marke, Rechtshinweis, Seitenkopf, Tabelle } from '@/components/ui';
 import { STATUSTEXT, VORGANGSTYP } from '@/lib/vorgangstexte';
+import { VORGANGSGRUPPEN, gruppeVon, type Vorgangsgruppe } from '@/lib/vorgangsablauf';
 
 export const dynamic = 'force-dynamic';
 
 const AMPELTON = { ABGELAUFEN: 'rot', KRITISCH: 'rot', WARNUNG: 'gelb', OFFEN: 'gruen', KEINE_FRIST: 'neutral' } as const;
 
-export default async function Vorgaenge() {
+const ERLEDIGT = ['ABGESCHLOSSEN', 'ZURUECKGEZOGEN', 'BEANTWORTET'];
+
+export default async function Vorgaenge({
+  searchParams,
+}: {
+  searchParams: Promise<{ gruppe?: string; stand?: string }>;
+}) {
   await verlangeRecht('vorgang.lesen');
   const jetzt = new Date();
+  const { gruppe: gruppeRoh, stand = 'offen' } = await searchParams;
 
-  const vorgaenge = await prisma.vorgang.findMany({
+  const gewaehlteGruppe = VORGANGSGRUPPEN.some((g) => g.schluessel === gruppeRoh)
+    ? (gruppeRoh as Vorgangsgruppe)
+    : null;
+
+  const alle = await prisma.vorgang.findMany({
     orderBy: [{ fristBis: { sort: 'asc', nulls: 'last' } }, { eingegangenAm: 'desc' }],
     include: { ausschuss: true },
   });
 
-  const offen = vorgaenge.filter((v) => !['ABGESCHLOSSEN', 'ZURUECKGEZOGEN', 'BEANTWORTET'].includes(v.status));
+  // Die Gruppierung liegt in der Fachbibliothek, damit sie testbar bleibt und
+  // nicht in der Oberflaeche verstreut wird.
+  const nachGruppe = gewaehlteGruppe ? alle.filter((v) => gruppeVon(v.typ) === gewaehlteGruppe) : alle;
+  const vorgaenge =
+    stand === 'alle'
+      ? nachGruppe
+      : stand === 'erledigt'
+        ? nachGruppe.filter((v) => ERLEDIGT.includes(v.status))
+        : nachGruppe.filter((v) => !ERLEDIGT.includes(v.status));
+
+  // Die Kennzahlen beziehen sich auf die gewaehlte Gruppe, nicht auf den
+  // Gesamtbestand – sonst wuerde der Filter in die Irre fuehren.
+  const offen = nachGruppe.filter((v) => !ERLEDIGT.includes(v.status));
   const mitFrist = offen.filter((v) => v.fristBis);
   const abgelaufen = mitFrist.filter((v) => fristampel(v.fristBis, jetzt) === 'ABGELAUFEN');
   const dringend = mitFrist.filter((v) => ['KRITISCH', 'WARNUNG'].includes(fristampel(v.fristBis, jetzt)));
   const fiktion = offen.filter((v) => v.zustimmungsfiktion);
+
+  const beschreibung = gewaehlteGruppe
+    ? VORGANGSGRUPPEN.find((g) => g.schluessel === gewaehlteGruppe)!
+    : null;
+
+  const zaehleGruppe = (g: Vorgangsgruppe) =>
+    alle.filter((v) => gruppeVon(v.typ) === g && !ERLEDIGT.includes(v.status)).length;
+
+  function pfad(neu: { gruppe?: string | null; stand?: string }) {
+    const p = new URLSearchParams();
+    const g = neu.gruppe === undefined ? gewaehlteGruppe : neu.gruppe;
+    if (g) p.set('gruppe', g);
+    const st = neu.stand ?? stand;
+    if (st !== 'offen') p.set('stand', st);
+    const q = p.toString();
+    return q ? `/vorgaenge?${q}` : '/vorgaenge';
+  }
 
   return (
     <>
@@ -44,9 +85,83 @@ export default async function Vorgaenge() {
         />
       </div>
 
-      <Karte titel={`Alle Vorgänge (${vorgaenge.length})`}>
+      <div className="mb-4 space-y-3">
+        <nav aria-label="Nach Vorgangsart filtern" className="flex flex-wrap gap-2">
+          <Link
+            href={pfad({ gruppe: null })}
+            className={`rounded-md px-3 py-1.5 text-sm transition ${
+              !gewaehlteGruppe
+                ? 'bg-marke-700 font-medium text-white'
+                : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            Alle Vorgänge
+          </Link>
+          {VORGANGSGRUPPEN.map((g) => {
+            const anzahl = zaehleGruppe(g.schluessel);
+            const aktiv = gewaehlteGruppe === g.schluessel;
+            return (
+              <Link
+                key={g.schluessel}
+                href={pfad({ gruppe: g.schluessel })}
+                className={`rounded-md px-3 py-1.5 text-sm transition ${
+                  aktiv
+                    ? 'bg-marke-700 font-medium text-white'
+                    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {g.bezeichnung}
+                {anzahl > 0 && (
+                  <span className={`ml-1.5 tabular-nums ${aktiv ? 'text-marke-100' : 'text-slate-400'}`}>
+                    {anzahl}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-slate-500">Bearbeitungsstand:</span>
+          {[
+            { wert: 'offen', text: 'offen' },
+            { wert: 'erledigt', text: 'erledigt' },
+            { wert: 'alle', text: 'alle' },
+          ].map((o) => (
+            <Link
+              key={o.wert}
+              href={pfad({ stand: o.wert })}
+              className={`rounded px-2 py-1 transition ${
+                stand === o.wert
+                  ? 'bg-slate-800 font-medium text-white'
+                  : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {o.text}
+            </Link>
+          ))}
+        </div>
+
+        {beschreibung && (
+          <p className="rounded-md bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+            <span className="font-medium text-slate-800">{beschreibung.norm}</span> ·{' '}
+            {beschreibung.erlaeuterung}
+          </p>
+        )}
+      </div>
+
+      <Karte
+        titel={`${beschreibung?.bezeichnung ?? 'Vorgänge'} (${vorgaenge.length})`}
+        hinweis={stand === 'offen' ? 'nur offene Vorgänge – Stand über die Schalter oben umstellen' : undefined}
+      >
         {vorgaenge.length === 0 ? (
-          <Leer text="Es sind keine Vorgänge erfasst." />
+          <Leer
+            text={
+              gewaehlteGruppe
+                ? 'In dieser Gruppe sind keine Vorgänge mit dem gewählten Bearbeitungsstand erfasst.'
+                : 'Es sind keine Vorgänge erfasst.'
+            }
+          />
         ) : (
           <Tabelle kopf={['Aktenzeichen', 'Gegenstand', 'Grundlage', 'Eingang', 'Frist', 'Status']}>
             {vorgaenge.map((v) => {

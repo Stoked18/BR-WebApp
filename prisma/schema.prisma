@@ -679,9 +679,26 @@ model Vorgang {
 
   status      Vorgangsstatus @default(EINGEGANGEN)
   erledigtAm  DateTime?
+
+  /// Der Betriebsrat hat die Unterrichtung als unvollstaendig geruegt.
+  /// Rechtsfolge unterscheidet sich je nach Norm:
+  ///  - § 99 Abs. 1 BetrVG: die Wochenfrist laeuft erst ab vollstaendiger
+  ///    Unterrichtung; die Ruege haelt sie an.
+  ///  - § 102 Abs. 1 BetrVG: die Wochenfrist laeuft gleichwohl weiter. Die
+  ///    unvollstaendige Anhoerung macht die Kuendigung nach § 102 Abs. 1 S. 3
+  ///    BetrVG unwirksam, entbindet den Betriebsrat aber nicht davon,
+  ///    fristgerecht Stellung zu nehmen.
+  unterrichtungGeruegtAm DateTime?
+  unterrichtungGeruegtInhalt String? @db.Text
+  /// Der Arbeitgeber hat die fehlenden Angaben nachgereicht.
+  unterrichtungVervollstaendigtAm DateTime?
+
   /// Antwort des Betriebsrats
   antwortText String?  @db.Text
   antwortAm   DateTime?
+  /// Zugang der Stellungnahme beim Arbeitgeber. Fuer die Fristwahrung kommt es
+  /// auf den Zugang an, nicht auf die Absendung.
+  antwortZugangAm DateTime?
   vertraulichkeit Vertraulichkeit @default(PERSONENBEZOGEN)
 
   /// Loeschdatum nach Loeschkonzept (Art. 5 Abs. 1 lit. e DSGVO)
