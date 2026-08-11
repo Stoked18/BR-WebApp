@@ -230,14 +230,20 @@ sich stützen kann:
 
 | Bestandteil | Verfahren | Ergebnis |
 | --- | --- | --- |
-| Fristen, Feiertage, BetrVG-Schwellenwerte, Anwesenheit, Berechtigungen | 100 Modultests | bestanden |
+| Fristen, Feiertage, BetrVG-Schwellenwerte, Anwesenheit, Berechtigungen, Rollenvergabe, Löschplan, Einstellungen | 146 Modultests | bestanden |
+| Vollständigkeit des Löschplans gegenüber dem Datenmodell | Test vergleicht ihn gegen `schema.prisma`; eine neue Tabelle ohne Zuordnung lässt ihn fehlschlagen | bestanden |
 | Typisierung des gesamten Quelltexts | `tsc --noEmit` | fehlerfrei |
-| Erzeugung aller 22 Seiten | `next build` | fehlerfrei |
+| Erzeugung aller 27 Seiten | `next build` | fehlerfrei |
 | Anmeldung, Rollentrennung, Sitzungsablauf, Nachrücken, Beschlussfassung, Antragsportal | Chromium gegen die laufende Anwendung | bestanden |
+| Verwaltung: Zugang für alle neun Rollen, Betriebs- und Gremiumsdaten, Einstellungen, Benutzerverwaltung, Kennwortwechsel, beide Löschstufen | Chromium gegen eine Kopie der Datenbank | bestanden |
+| Wirksamkeit der Einstellung „Ladungsfrist" | in der Verwaltung geändert, neue Sitzung angelegt, Wert in der Datenbank geprüft | bestanden |
 | Migration gegen leere Datenbank, anschließender Beispielbestand | `prisma migrate deploy` und Seed gegen frische PostgreSQL-Instanz | bestanden |
-| **Dockerfile und `docker-compose.yml`** | — | **ungetestet**, in der Entwicklungsumgebung stand kein Docker-Daemon zur Verfügung |
+| Laufzeit aus `next build --output standalone` | aus einer sauberen Kopie gestartet, Anmeldung und Datenbankzugriff geprüft | bestanden |
+| **Dockerfile und `docker-compose.yml`** | Dateiaufbau nachgestellt und geprüft; der Bau selbst **ungetestet**, in der Entwicklungsumgebung stand kein Docker-Daemon zur Verfügung | **vor dem Einsatz nachzuholen** |
 | Einrichtungsskript des Devcontainers | gegen leere und gegen befüllte Datenbank ausgeführt | bestanden |
+| Devcontainer als Ganzes in Codespaces | vom Betriebsrat selbst aufgerufen | bestanden |
 | Abhängigkeiten | `npm audit` | 0 Schwachstellen |
-| **Devcontainer als Ganzes in Codespaces** | — | **noch nicht erprobt** |
 
-Die fett hervorgehobenen Zeilen sind vor dem ersten Einsatz nachzuholen.
+Die fett hervorgehobene Zeile ist vor dem ersten Einsatz nachzuholen: ein
+`docker compose up -d --build` auf dem Zielserver, danach ein Aufruf von
+`/einrichtung`.

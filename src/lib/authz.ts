@@ -115,6 +115,8 @@ export type Sitzungsbenutzer = {
   email: string;
   rollen: Systemrolle[];
   personId: string | null;
+  /** Steht ein Kennwortwechsel aus? (Erstkennwort oder Zuruecksetzung) */
+  passwortWechsel?: boolean;
 };
 
 export function rechteVon(rollen: Systemrolle[]): Set<Recht> {
@@ -130,6 +132,62 @@ export function darf(benutzer: Sitzungsbenutzer | null, recht: Recht): boolean {
 
 export function darfEines(benutzer: Sitzungsbenutzer | null, ...rechte: Recht[]): boolean {
   return rechte.some((r) => darf(benutzer, r));
+}
+
+const AG_ROLLEN: Systemrolle[] = ['AG_PERSONAL', 'AG_FACHBEREICH', 'AG_ARBEITSSICHERHEIT'];
+const BR_ROLLEN: Systemrolle[] = [
+  'BR_VORSITZ', 'BR_STELLV', 'BR_MITGLIED', 'ERSATZMITGLIED', 'JAV', 'SBV',
+  'WIRTSCHAFTSAUSSCHUSS', 'AUFSICHTSRAT_AN',
+];
+
+/**
+ * Prueft die Rollenzuweisung eines Kontos auf unhaltbare Mischungen.
+ *
+ * Bewusst eng gefasst. Blockiert werden nur Kombinationen, die eine
+ * Verschwiegenheitspflicht *gegenueber dem Arbeitgeber* aushebeln wuerden:
+ * die oder der Datenschutzbeauftragte ist dem Betriebsrat gegenueber nach
+ * § 79a S. 3 BetrVG zur Verschwiegenheit auch gegenueber dem Arbeitgeber
+ * verpflichtet, und die Revision liest das Zugriffsprotokoll des Gremiums mit.
+ * Beides zugleich mit einer Arbeitgeberrolle zu fuehren, hoebe die Pflicht auf.
+ *
+ * Die blosse Kombination aus Gremiums- und Arbeitgeberrolle wird dagegen
+ * nicht verhindert: sie kommt vor (etwa beim Mitglied, das zugleich als
+ * Fachkraft fuer Arbeitssicherheit Antraege einreicht) und ist harmlos, weil
+ * ein solches Konto ohnehin als Gremiumsseite eingeordnet wird und nichts
+ * hinzugewinnt. Sie ist aber erklaerungsbeduerftig – dafuer gibt es
+ * hinweisRollenmischung().
+ *
+ * Liefert die Fehlermeldung oder null, wenn die Zuweisung tragfaehig ist.
+ */
+export function pruefeRollenmischung(rollen: Systemrolle[]): string | null {
+  if (rollen.length === 0) return 'Mindestens eine Rolle ist zuzuweisen.';
+  const ag = rollen.some((r) => AG_ROLLEN.includes(r));
+  if (ag && rollen.includes('DSB')) {
+    return 'Die Rolle „Datenschutzbeauftragte:r“ ist nach § 79a S. 3 BetrVG zur Verschwiegenheit auch ' +
+      'gegenüber dem Arbeitgeber verpflichtet und kann deshalb nicht mit einer Arbeitgeberrolle ' +
+      'verbunden werden.';
+  }
+  if (ag && rollen.includes('AUDIT')) {
+    return 'Die Revision liest das Zugriffsprotokoll des Betriebsrats mit; sie kann nicht zugleich ' +
+      'eine Arbeitgeberrolle führen (§§ 78, 79 BetrVG).';
+  }
+  return null;
+}
+
+/**
+ * Erklaerungsbeduerftige, aber zulaessige Zuweisung. Wird im Zugriffsprotokoll
+ * vermerkt, damit die Entscheidung spaeter nachvollziehbar bleibt.
+ */
+export function hinweisRollenmischung(rollen: Systemrolle[]): string | null {
+  const ag = rollen.some((r) => AG_ROLLEN.includes(r));
+  const br = rollen.some((r) => BR_ROLLEN.includes(r));
+  if (ag && br) {
+    return 'Dieses Konto trägt zugleich eine Gremiums- und eine Arbeitgeberrolle. Es wird als ' +
+      'Gremiumsseite behandelt und sieht damit die internen Beratungen. Das ist nur richtig, wenn ' +
+      'die Person tatsächlich dem Betriebsrat angehört und die Arbeitgeberrolle lediglich das ' +
+      'Einreichen von Anträgen ermöglichen soll (§§ 78, 79 BetrVG).';
+  }
+  return null;
 }
 
 /** Gehoert die Rolle zur Arbeitgeberseite? Steuert die Sichtbarkeit im Menue. */

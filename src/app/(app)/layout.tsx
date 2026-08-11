@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import { prisma } from '@/lib/prisma';
 import { aktuellerBenutzer, melde_ab } from '@/lib/auth';
 import { ROLLENBEZEICHNUNG, darf, istArbeitgeberseite, type Recht } from '@/lib/authz';
+import { istAn, mitVorgaben } from '@/lib/einstellungen';
 import { Navigation, type Menuepunkt } from '@/components/navigation';
 
 export const dynamic = 'force-dynamic';
@@ -48,7 +50,11 @@ const MENUE: Array<{ gruppe: string; punkte: Array<Menuepunkt & { recht?: Recht 
   },
   {
     gruppe: 'Betrieb',
-    punkte: [{ pfad: '/system', text: 'Systemzustand', recht: 'system.verwalten' }],
+    punkte: [
+      { pfad: '/verwaltung', text: 'Verwaltung', recht: 'gremium.verwalten' },
+      { pfad: '/verwaltung/benutzer', text: 'Benutzerkonten', recht: 'benutzer.verwalten' },
+      { pfad: '/system', text: 'Systemzustand', recht: 'system.verwalten' },
+    ],
   },
 ];
 
@@ -72,6 +78,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const benutzer = await aktuellerBenutzer();
   if (!benutzer) redirect('/anmeldung');
 
+  const [betrieb, einstellungen] = await Promise.all([
+    prisma.betrieb.findFirst({ select: { name: true, ort: true } }),
+    prisma.einstellung.findMany({ select: { schluessel: true, wert: true } }),
+  ]);
+  const testbetrieb = istAn(mitVorgaben(einstellungen), 'betrieb.testbetrieb');
+
   const arbeitgeberseite = istArbeitgeberseite(benutzer);
   const menue = arbeitgeberseite
     ? MENUE_ARBEITGEBER
@@ -86,7 +98,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="px-5 py-4">
           <Link href="/" className="block">
             <p className="text-base font-semibold text-slate-900">BR-Cockpit</p>
-            <p className="text-xs text-slate-500">Werk Solingen</p>
+            <p className="text-xs text-slate-500">
+              {betrieb ? `${betrieb.name} · ${betrieb.ort}` : 'Betrieb noch nicht hinterlegt'}
+            </p>
           </Link>
         </div>
         <Navigation gruppen={menue} />
@@ -100,15 +114,41 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               {benutzer.rollen.map((r) => ROLLENBEZEICHNUNG[r]).join(' · ')}
             </p>
           </div>
-          <form action={abmelden}>
-            <button
-              type="submit"
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              href="/konto"
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
             >
-              Abmelden
-            </button>
-          </form>
+              Mein Konto
+            </Link>
+            <form action={abmelden}>
+              <button
+                type="submit"
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
+              >
+                Abmelden
+              </button>
+            </form>
+          </div>
         </header>
+
+        {testbetrieb && (
+          <p className="kein-druck border-b border-amber-300 bg-amber-100 px-6 py-2 text-xs font-medium text-amber-900">
+            Erprobungsbetrieb. Die hier erfassten Fristen, Beschlüsse und Niederschriften entfalten
+            keine Wirkung nach außen. Maßgeblich bleiben die unterzeichnete Niederschrift und die
+            Beschlusssammlung nach § 34 BetrVG.
+          </p>
+        )}
+
+        {benutzer.passwortWechsel && (
+          <p className="kein-druck border-b border-rose-200 bg-rose-50 px-6 py-2 text-xs text-rose-900">
+            Für dieses Konto steht ein Kennwortwechsel aus. Das vergebene Kennwort ist einer zweiten
+            Person bekannt.{' '}
+            <Link href="/konto" className="font-medium underline">
+              Jetzt ändern
+            </Link>
+          </p>
+        )}
 
         {arbeitgeberseite && (
           <p className="kein-druck border-b border-sky-200 bg-sky-50 px-6 py-2 text-xs text-sky-900">

@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { prisma } from '@/lib/prisma';
 import { aktuellerBenutzer, melde_an } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -23,6 +24,9 @@ export default async function Anmeldung({
 }) {
   const benutzer = await aktuellerBenutzer();
   if (benutzer) redirect('/');
+  // Frische Installation: erst einrichten, dann anmelden.
+  if ((await prisma.benutzer.count()) === 0) redirect('/einrichtung');
+  const betrieb = await prisma.betrieb.findFirst({ select: { name: true, ort: true } });
   const { fehler } = await searchParams;
 
   return (
@@ -30,7 +34,9 @@ export default async function Anmeldung({
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-semibold text-slate-900">BR-Cockpit</h1>
-          <p className="mt-1 text-sm text-slate-600">Betriebsrat Werk Solingen</p>
+          <p className="mt-1 text-sm text-slate-600">
+            {betrieb ? `Betriebsrat ${betrieb.name}, ${betrieb.ort}` : 'Betriebsratsverwaltung'}
+          </p>
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">

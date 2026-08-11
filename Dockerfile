@@ -25,14 +25,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
 
+# Der Standalone-Build enthaelt bereits alles, was zur Laufzeit gebraucht wird:
+# den Prisma-Client samt Abfrage-Engine und das native argon2-Modul. Die
+# Prisma-Befehlszeile gehoert bewusst NICHT hierher – sie zieht weitere
+# Abhaengigkeiten nach sich (u. a. "effect"), die im schlanken Abbild fehlen
+# wuerden. Die Migrationen laufen deshalb in einem eigenen Dienst, siehe
+# docker-compose.yml.
 COPY --from=bau /app/public ./public
 COPY --from=bau /app/.next/standalone ./
 COPY --from=bau /app/.next/static ./.next/static
-# Schema, Migrationen und Prisma-Werkzeuge fuer den Migrationslauf beim Start
-COPY --from=bau /app/prisma ./prisma
-COPY --from=bau /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=bau /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=bau /app/node_modules/prisma ./node_modules/prisma
 
 RUN mkdir -p /var/lib/br-cockpit/data && chown -R brcockpit:brcockpit /var/lib/br-cockpit /app
 

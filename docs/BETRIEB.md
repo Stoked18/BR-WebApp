@@ -45,25 +45,74 @@ Starten:
 docker compose up -d --build
 ```
 
-Die Migrationen laufen beim Start des Anwendungscontainers. Anschließend das
-erste Konto anlegen:
+Die Migrationen laufen in einem eigenen Dienst (`migration`), bevor der
+Anwendungsdienst startet; `docker compose up` wartet darauf.
 
-```bash
-docker compose exec app node -e "
-const { PrismaClient } = require('@prisma/client');
-const argon2 = require('argon2');
-(async () => {
-  const p = new PrismaClient();
-  await p.benutzer.create({ data: {
-    email: 'vorsitz@betrieb.example',
-    anzeigename: 'Vorsitz',
-    passwortHash: await argon2.hash(process.env.START_PASSWORT, { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 }),
-    rollen: ['BR_VORSITZ'],
-    passwortWechsel: true,
-  }});
-  await p.\$disconnect();
-})();"
-```
+## Ersteinrichtung
+
+Auf einer leeren Datenbank leitet die Anwendung jeden Aufruf auf
+`/einrichtung`. Dort werden in einem Schritt angelegt:
+
+- der **Betrieb** (Name, Ort, Bundesland, Zahl der Wahlberechtigten und
+  Beschäftigten),
+- das **Gremium** mit der Mitgliederzahl — leer gelassen, wird sie nach
+  § 9 BetrVG aus der Zahl der Wahlberechtigten berechnet,
+- das erste **Konto für den Betriebsratsvorsitz**,
+- die **Einstellungen** mit ihren Vorgaben.
+
+Sobald ein Konto besteht, ist die Seite dauerhaft gesperrt — sie prüft das
+sowohl beim Aufruf als auch noch einmal beim Absenden, damit sie nicht zur
+Hintertür wird. Ein Konto von Hand in der Datenbank anzulegen ist damit nicht
+mehr nötig.
+
+Das Bundesland ist die folgenreichste Angabe: es steuert die Feiertage und
+damit jede Fristberechnung nach § 193 BGB. In Nordrhein-Westfalen zählen
+Fronleichnam und Allerheiligen mit, und genau diese beiden Tage verschieben in
+der Praxis eine Wochenfrist nach § 99 BetrVG.
+
+## Erprobung und Übergang in den Echtbetrieb
+
+Für den Testlauf gibt es unter **Verwaltung** (nur mit dem Recht
+`gremium.verwalten`, also Vorsitz und Stellvertretung):
+
+- **Betrieb** — Name, Ort, Bundesland, Beschäftigtenzahlen, Konzern, Tarifbindung.
+- **Gremium** — Bezeichnung, Mitgliederzahl (§ 9 BetrVG prüft auf eine ungerade
+  Zahl), Zulassung der Video- und Telefonteilnahme nach § 30 Abs. 2 BetrVG.
+- **Einstellungen** — Ladungsfrist, Einwendungsfrist gegen die Niederschrift und
+  der Schalter **Testbetrieb**. Ist er gesetzt, steht in der ganzen Anwendung
+  ein Hinweisbalken: die hier erfassten Fristen und Beschlüsse entfalten keine
+  Wirkung nach außen, maßgeblich bleiben die unterzeichnete Niederschrift und
+  die Beschlusssammlung nach § 34 BetrVG.
+
+**Verwaltung → Benutzerkonten** (Recht `benutzer.verwalten`, nur Vorsitz) legt
+Konten an, ändert Rollen, setzt Kennwörter und deaktiviert Zugänge. Konten
+werden nicht gelöscht: sonst risse die Zuordnung alter Protokolleinträge. Beim
+Ausscheiden aus dem Amt (§ 24 BetrVG) ist das Konto zu deaktivieren; laufende
+Anmeldungen enden dabei sofort.
+
+Ein zurückgesetztes Kennwort ist einer zweiten Person bekannt. Die betroffene
+Person landet bei der nächsten Anmeldung deshalb auf **Mein Konto** und wird
+zum Wechsel aufgefordert.
+
+**Verwaltung → Bestand zurücksetzen** entfernt den Beispielbestand. Zwei Stufen:
+
+| Stufe | Entfernt | Bleibt |
+|---|---|---|
+| 1 – Bewegungsdaten | Sitzungen, Tagesordnung, Niederschriften, Beschlüsse, Vorgänge und Fristen, Aufgaben, Dokumente, Betriebsvereinbarungen, Schulungen, Sprechstunden, Aufsichtsratsprojekt, Datenschutzregister | Personen, Mitgliedschaften, Ausschüsse, alle Konten |
+| 2 – alles | zusätzlich Personen, Mitgliedschaften, Funktionen, Freistellungen, Wahlergebnisse, Ausschüsse, Schichtmodelle, alle übrigen Konten, das Zugriffsprotokoll | Betrieb, Gremium, Amtsperiode, Einstellungen, das eigene Konto |
+
+Stufe 1 verlangt die Eingabe `LÖSCHEN`, Stufe 2 den Namen des Betriebs.
+
+Dass Stufe 2 **das Zugriffsprotokoll leert**, ist kein Nebeneffekt, sondern
+notwendig: die Einträge sind über eine Hash-Kette verbunden und verweisen auf
+die Konten, die dabei gelöscht werden. Bliebe das Protokoll stehen, meldete
+seine Prüfung ab sofort dauerhaft eine Manipulation. Der erste Eintrag der
+neuen Kette hält fest, wer wann zurückgesetzt hat.
+
+Vor beiden Stufen eine Sicherung anlegen — es gibt keinen Papierkorb. Nach dem
+Übergang in den Echtbetrieb gehört diese Seite nicht mehr benutzt; für einzelne
+Löschungen sind die Löschregeln im Datenschutzmodul vorgesehen, die
+fristgebunden und dokumentiert arbeiten.
 
 ## Der Dokumentenschlüssel
 

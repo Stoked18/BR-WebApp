@@ -172,6 +172,7 @@ export async function aktuellerBenutzer(): Promise<Sitzungsbenutzer | null> {
     email: token.benutzer.email,
     rollen: token.benutzer.rollen,
     personId: token.benutzer.personId,
+    passwortWechsel: token.benutzer.passwortWechsel,
   };
 }
 

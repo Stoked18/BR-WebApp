@@ -4,7 +4,9 @@ import {
   darf,
   darfVertraulichkeit,
   istArbeitgeberseite,
+  hinweisRollenmischung,
   istGremiumsseite,
+  pruefeRollenmischung,
   rechteVon,
   sichtbareStufen,
   type Recht,
@@ -174,5 +176,69 @@ describe('Rollenkombinationen', () => {
     expect(istGremiumsseite(b)).toBe(true);
     expect(darf(b, 'sitzung.lesen')).toBe(true);
     expect(darf(b, 'vorgang.einreichen')).toBe(true);
+  });
+});
+
+/**
+ * Pruefung bei der Vergabe der Rollen. Hart verboten ist nur, was eine
+ * Verschwiegenheitspflicht gegenueber dem Arbeitgeber aufheben wuerde;
+ * erklaerungsbeduerftige Kombinationen werden lediglich angezeigt.
+ */
+describe('Zulaessige Rollenmischung', () => {
+  it('verlangt mindestens eine Rolle', () => {
+    expect(pruefeRollenmischung([])).toMatch(/Mindestens eine Rolle/);
+  });
+
+  it('laesst reine Gremiumskonten zu', () => {
+    expect(pruefeRollenmischung(['BR_VORSITZ'])).toBeNull();
+    expect(pruefeRollenmischung(['BR_MITGLIED', 'SBV'])).toBeNull();
+    expect(pruefeRollenmischung(['BR_MITGLIED', 'WIRTSCHAFTSAUSSCHUSS', 'AUFSICHTSRAT_AN'])).toBeNull();
+  });
+
+  it('laesst reine Arbeitgeberkonten zu', () => {
+    expect(pruefeRollenmischung(['AG_PERSONAL'])).toBeNull();
+    expect(pruefeRollenmischung(['AG_FACHBEREICH', 'AG_ARBEITSSICHERHEIT'])).toBeNull();
+  });
+
+  it('laesst die Doppelrolle zu, weist aber darauf hin', () => {
+    // Kein Verbot: ein solches Konto wird ohnehin als Gremiumsseite
+    // eingeordnet (siehe "Rollenkombinationen" oben) und gewinnt durch die
+    // Arbeitgeberrolle nur das Einreichen von Antraegen hinzu.
+    const ag: Systemrolle[] = ['AG_PERSONAL', 'AG_FACHBEREICH', 'AG_ARBEITSSICHERHEIT'];
+    const br: Systemrolle[] = [
+      'BR_VORSITZ', 'BR_STELLV', 'BR_MITGLIED', 'ERSATZMITGLIED',
+      'JAV', 'SBV', 'WIRTSCHAFTSAUSSCHUSS', 'AUFSICHTSRAT_AN',
+    ];
+    for (const a of ag) {
+      for (const b of br) {
+        expect(pruefeRollenmischung([a, b]), `${a} + ${b}`).toBeNull();
+        expect(hinweisRollenmischung([a, b]), `${a} + ${b}`).toMatch(/§§ 78, 79 BetrVG/);
+      }
+    }
+  });
+
+  it('gibt fuer eindeutige Zuweisungen keinen Hinweis aus', () => {
+    expect(hinweisRollenmischung(['BR_VORSITZ'])).toBeNull();
+    expect(hinweisRollenmischung(['AG_PERSONAL'])).toBeNull();
+    expect(hinweisRollenmischung(['IT_BETRIEB'])).toBeNull();
+  });
+
+  it('haelt die Datenschutzbeauftragung von der Arbeitgeberseite fern', () => {
+    // § 79a S. 3 BetrVG: Verschwiegenheit auch gegenueber dem Arbeitgeber.
+    expect(pruefeRollenmischung(['DSB', 'AG_PERSONAL'])).toMatch(/§ 79a/);
+    expect(pruefeRollenmischung(['DSB'])).toBeNull();
+    expect(pruefeRollenmischung(['DSB', 'AUDIT'])).toBeNull();
+  });
+
+  it('haelt die Revision von der Arbeitgeberseite fern', () => {
+    expect(pruefeRollenmischung(['AUDIT', 'AG_FACHBEREICH'])).toMatch(/Revision/);
+    expect(pruefeRollenmischung(['AUDIT'])).toBeNull();
+  });
+
+  it('laesst den IT-Betrieb neben einer Arbeitgeberrolle zu', () => {
+    // IT_BETRIEB traegt keinerlei fachliches Leserecht (siehe RECHTE-Tabelle),
+    // kann die Sphaerentrennung also nicht aushebeln.
+    expect(pruefeRollenmischung(['IT_BETRIEB', 'AG_PERSONAL'])).toBeNull();
+    expect(rechteVon(['IT_BETRIEB', 'AG_PERSONAL']).has('sitzung.lesen')).toBe(false);
   });
 });

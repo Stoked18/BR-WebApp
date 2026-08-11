@@ -26,6 +26,30 @@ const BUNDESWEIT = [
   'NW', 'RP', 'SL', 'SN', 'ST', 'SH', 'TH',
 ] as const;
 
+/**
+ * Bundeslaender mit Namen – eine Quelle fuer alle Auswahlfelder, damit
+ * Ersteinrichtung, Verwaltung und Fristenrechner nicht auseinanderlaufen.
+ * Nordrhein-Westfalen steht vorn, weil es die Vorgabe dieser Installation ist.
+ */
+export const BUNDESLAENDER: ReadonlyArray<{ kuerzel: string; name: string }> = [
+  { kuerzel: 'NW', name: 'Nordrhein-Westfalen' },
+  { kuerzel: 'BW', name: 'Baden-Württemberg' },
+  { kuerzel: 'BY', name: 'Bayern' },
+  { kuerzel: 'BE', name: 'Berlin' },
+  { kuerzel: 'BB', name: 'Brandenburg' },
+  { kuerzel: 'HB', name: 'Bremen' },
+  { kuerzel: 'HH', name: 'Hamburg' },
+  { kuerzel: 'HE', name: 'Hessen' },
+  { kuerzel: 'MV', name: 'Mecklenburg-Vorpommern' },
+  { kuerzel: 'NI', name: 'Niedersachsen' },
+  { kuerzel: 'RP', name: 'Rheinland-Pfalz' },
+  { kuerzel: 'SL', name: 'Saarland' },
+  { kuerzel: 'SN', name: 'Sachsen' },
+  { kuerzel: 'ST', name: 'Sachsen-Anhalt' },
+  { kuerzel: 'SH', name: 'Schleswig-Holstein' },
+  { kuerzel: 'TH', name: 'Thüringen' },
+];
+
 export function tagAlsIso(t: Kalendertag): string {
   return `${String(t.jahr).padStart(4, '0')}-${String(t.monat).padStart(2, '0')}-${String(t.tag).padStart(2, '0')}`;
 }

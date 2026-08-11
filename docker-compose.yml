@@ -28,12 +28,30 @@ services:
       timeout: 5s
       retries: 5
 
+  # Einmaliger Lauf beim Start: spielt ausstehende Migrationen ein und beendet
+  # sich. Nutzt die Bau-Stufe, weil dort die vollstaendigen Abhaengigkeiten der
+  # Prisma-Befehlszeile liegen. Das Betriebsabbild bleibt dadurch schlank.
+  migration:
+    build:
+      context: .
+      target: bau
+    restart: "no"
+    command: npx prisma migrate deploy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [intern]
+
   app:
     build: .
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      migration:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: ${DATABASE_URL}
       AUTH_SECRET: ${AUTH_SECRET}
@@ -46,9 +64,6 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     networks: [intern]
-    # Migrationen laufen beim Start, damit ein Update keinen Handgriff braucht.
-    command: >
-      sh -c "node node_modules/prisma/build/index.js migrate deploy && node server.js"
     read_only: true
     tmpfs:
       - /tmp

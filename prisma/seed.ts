@@ -15,6 +15,7 @@ import { hashePasswort } from '../src/lib/passwort';
 import { berechneNachVorlage } from '../src/lib/fristen';
 import { alsKalendertag } from '../src/lib/fristen';
 import { betriebsausschuss, freistellungen, groesseBetriebsrat } from '../src/lib/betrvg';
+import { EINSTELLUNGEN } from '../src/lib/einstellungen';
 
 const prisma = new PrismaClient();
 
@@ -1476,17 +1477,16 @@ async function main() {
     },
   });
 
+  // Vorgaben aus dem Einstellungskatalog. Der Katalog ist die einzige Quelle;
+  // frueher standen hier zusaetzlich die Schluessel "betrieb.aktiv" und
+  // "gremium.aktiv" mit den jeweiligen Datensatzkennungen – sie wurden nirgends
+  // gelesen und zeigten nach einem Zuruecksetzen ins Leere.
   await prisma.einstellung.createMany({
-    data: [
-      { schluessel: 'betrieb.aktiv', wert: betrieb.id, beschreibung: 'Betrieb, der in der Oberfläche angezeigt wird.' },
-      { schluessel: 'gremium.aktiv', wert: gremium.id, beschreibung: 'Vorbelegtes Gremium.' },
-      { schluessel: 'ladungsfrist.tage', wert: '7', beschreibung: 'Ladungsfrist nach der Geschäftsordnung (§ 29 Abs. 2 BetrVG).' },
-      {
-        schluessel: 'einspruchsfrist.niederschrift.wochen',
-        wert: '2',
-        beschreibung: 'Frist für Einwendungen gegen die Niederschrift nach der Geschäftsordnung.',
-      },
-    ],
+    data: EINSTELLUNGEN.map((def) => ({
+      schluessel: def.schluessel,
+      wert: def.vorgabe,
+      beschreibung: def.bezeichnung,
+    })),
   });
 
   console.log('\nFertig.');
