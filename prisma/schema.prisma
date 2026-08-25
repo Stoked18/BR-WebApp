@@ -4,6 +4,13 @@
 
 generator client {
   provider = "prisma-client-js"
+  // "native" fuer die Entwicklung, der zweite Eintrag fuer das Container-Abbild
+  // (node:22-bookworm-slim = Debian mit OpenSSL 3). Ohne ihn erzeugt Prisma nur
+  // die Abfrage-Engine der Bau-Maschine; wird auf einem anderen System gebaut
+  // als spaeter ausgefuehrt – etwa auf einem Mac mit Apple-Silicon fuer einen
+  // amd64-Server –, fehlt im Abbild die passende Engine und die Anwendung
+  // bricht beim ersten Datenbankzugriff ab.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {

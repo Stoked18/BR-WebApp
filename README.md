@@ -124,13 +124,24 @@ Beispielbestand nur an, solange die Datenbank leer ist.
 Mit Docker:
 
 ```bash
-cp .env.example .env
-openssl rand -hex 32   # -> AUTH_SECRET
-openssl rand -hex 32   # -> DOKUMENT_SCHLUESSEL
-mkdir -p geheimnisse && openssl rand -base64 24 > geheimnisse/db_passwort
-
+./vorbereiten.sh NW          # erzeugt .env und alle Schlüssel
 docker compose up -d --build
-docker compose exec app node node_modules/.bin/tsx prisma/seed.ts   # Beispielbestand
+```
+
+Dann `http://127.0.0.1:3000` aufrufen — es erscheint die Ersteinrichtung, die
+Betrieb, Gremium und das erste Konto anlegt.
+
+Von einem anderen Rechner aus erreichbar wird die Anwendung erst, wenn in `.env`
+`BINDUNG=0.0.0.0` gesetzt ist; die Vorgabe bindet sie auf den Server selbst,
+weil die Veröffentlichung im Betriebsnetz ein Reverse Proxy mit TLS übernehmen
+soll. Wenn etwas klemmt: [docs/BETRIEB.md](docs/BETRIEB.md), Abschnitt
+„Wenn es nicht startet".
+
+Den Beispielbestand — 21 Personen, Sitzungen, Vorgänge, Fristen — spielt man
+statt der Ersteinrichtung so ein:
+
+```bash
+docker compose run --rm migration npx tsx prisma/seed.ts
 ```
 
 Mit vorhandenem Node 22 und PostgreSQL:
@@ -167,7 +178,7 @@ und einen Beschluss mit sechs Ja-Stimmen unter „Mehrheit der Mitglieder"
 erfassen — er wird abgelehnt, obwohl die einfache Mehrheit gereicht hätte.
 
 ```bash
-npm test          # 100 Tests zur Rechts- und Berechtigungslogik
+npm test          # 146 Tests zur Rechts- und Berechtigungslogik
 npm run typecheck
 ```
 
@@ -221,7 +232,13 @@ entscheidet das Gremium.
 
 ## Lizenz
 
-AGPL-3.0-or-later. Siehe [LICENSE](LICENSE).
+MIT. Siehe [LICENSE](LICENSE).
+
+Ausdrücklich zur Nachnutzung durch andere Betriebsräte gedacht: nutzen,
+anpassen, weitergeben — ohne Rückfrage, ohne Kosten, auch gewerblich. Die
+einzige Auflage ist, den Urhebervermerk mitzuführen. Eine Gewährleistung für
+die abgebildeten Fristen und Verfahrensschritte gibt es nicht; sie ersetzen
+keine Rechtsberatung.
 
 ## Prüfstand
 

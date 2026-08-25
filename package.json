@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "BR-Cockpit – Open-Source-Verwaltungsanwendung fuer Betriebsraete (BetrVG, DSGVO, On-Premise)",
-  "license": "AGPL-3.0-or-later",
+  "license": "MIT",
   "scripts": {
     "dev": "next dev",
     "setup": "bash .devcontainer/einrichten.sh",

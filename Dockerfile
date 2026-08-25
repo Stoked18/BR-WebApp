@@ -25,6 +25,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
 
+# HOSTNAME muss ausdruecklich gesetzt werden.
+#
+# Der von Next.js erzeugte server.js liest `process.env.HOSTNAME || '0.0.0.0'`
+# und uebergibt den Wert an listen(). Docker setzt HOSTNAME im Container aber
+# von sich aus auf die Container-Kennung (z. B. "a1b2c3d4e5f6"). Ohne die
+# folgende Zeile lauscht der Dienst deshalb nur auf der Container-Adresse:
+# 127.0.0.1 im Container ist dann tot, die HEALTHCHECK unten schlaegt dauerhaft
+# fehl und der Container gilt als "unhealthy", je nach Netztreiber ist er auch
+# von aussen nicht erreichbar.
+ENV HOSTNAME=0.0.0.0
+
 # Der Standalone-Build enthaelt bereits alles, was zur Laufzeit gebraucht wird:
 # den Prisma-Client samt Abfrage-Engine und das native argon2-Modul. Die
 # Prisma-Befehlszeile gehoert bewusst NICHT hierher – sie zieht weitere

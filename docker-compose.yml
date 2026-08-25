@@ -36,7 +36,29 @@ services:
       context: .
       target: bau
     restart: "no"
-    command: npx prisma migrate deploy
+    # Die Vorabpruefung erspart die irrefuehrendste Fehlermeldung dieses
+    # Aufbaus: enthaelt das Datenbankpasswort ein "/" oder "+", meldet Prisma
+    # "P1013 ... invalid port number in database URL", obwohl die Portangabe
+    # in Ordnung ist. Siehe docs/BETRIEB.md, Abschnitt "Wenn es nicht startet".
+    # Listenform mit literalem Block (|), damit die Zeilenumbrueche erhalten
+    # bleiben. Mit dem gefalteten Block (>) wuerden sie zu Leerzeichen und das
+    # Skript waere syntaktisch kaputt.
+    command:
+      - sh
+      - -c
+      - |
+        if [ -z "$$DATABASE_URL" ]; then
+          echo "FEHLER: DATABASE_URL ist leer." >&2
+          echo "        Liegt eine .env neben der docker-compose.yml?" >&2
+          echo "        Anlegen mit:  ./vorbereiten.sh" >&2
+          exit 1
+        fi
+        case "$$DATABASE_URL" in
+          *CHANGEME*)
+            echo "FEHLER: In DATABASE_URL steht noch ein Platzhalter aus .env.example." >&2
+            exit 1 ;;
+        esac
+        npx prisma migrate deploy
     environment:
       DATABASE_URL: ${DATABASE_URL}
     depends_on:
@@ -60,9 +82,16 @@ services:
       BUNDESLAND: ${BUNDESLAND:-NW}
     volumes:
       - dokumente:/var/lib/br-cockpit/data
-    # Nur lokal erreichbar – die Veroeffentlichung macht der Reverse Proxy.
+    # Vorgabe: nur auf dem Server selbst erreichbar – die Veroeffentlichung im
+    # Betriebsnetz macht ein vorgelagerter Reverse Proxy mit TLS.
+    #
+    # Fuer einen ersten Test ohne Reverse Proxy in der .env setzen:
+    #   BINDUNG=0.0.0.0
+    # Dann ist die Anwendung im Netz unter http://<server>:3000 erreichbar –
+    # unverschluesselt. Das ist nur zum Ausprobieren vertretbar, nicht mit
+    # echten Betriebsratsdaten (Art. 32 DSGVO).
     ports:
-      - "127.0.0.1:3000:3000"
+      - "${BINDUNG:-127.0.0.1}:${PORT_AUSSEN:-3000}:3000"
     networks: [intern]
     read_only: true
     tmpfs:

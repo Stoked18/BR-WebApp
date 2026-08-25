@@ -18,35 +18,74 @@ auf — weder für Schriftarten noch für Aktualisierungsprüfungen oder Telemet
 git clone <repository> br-cockpit
 cd br-cockpit
 
-# Geheimnisse erzeugen
-mkdir -p geheimnisse
-openssl rand -base64 24 > geheimnisse/db_passwort
-chmod 600 geheimnisse/db_passwort
-
-cp .env.example .env
-```
-
-In `.env` eintragen:
-
-```bash
-# beide mit `openssl rand -hex 32` erzeugen
-AUTH_SECRET="..."
-DOKUMENT_SCHLUESSEL="..."
-
-# Passwort aus geheimnisse/db_passwort einsetzen
-DATABASE_URL="postgresql://brapp:<passwort>@db:5432/brcockpit?schema=public"
-
-BUNDESLAND="NW"
-```
-
-Starten:
-
-```bash
+./vorbereiten.sh NW          # Bundeslandkürzel, Vorgabe ist NW
 docker compose up -d --build
 ```
 
+Mehr ist es nicht. `vorbereiten.sh` erzeugt das Datenbankpasswort, den
+Signaturschlüssel und den Dokumentenschlüssel und trägt sie in `.env` und
+`geheimnisse/db_passwort` ein. Eine vorhandene `.env` rührt es nicht an.
+
+> **Warum ein Skript und keine Handarbeit?** Weil das Datenbankpasswort an zwei
+> Stellen stehen muss und in einer URL landet. Die frühere Anleitung erzeugte es
+> mit `openssl rand -base64 24` — das liefert in rund **zwei von drei Fällen**
+> ein Passwort mit `/` oder `+`, und ein `/` zerlegt die Verbindungszeichenkette.
+> Prisma meldet dann `P1013 … invalid port number in database URL`, obwohl an der
+> Portangabe nichts falsch ist. Das Skript verwendet nur Hexadezimalzeichen.
+
 Die Migrationen laufen in einem eigenen Dienst (`migration`), bevor der
 Anwendungsdienst startet; `docker compose up` wartet darauf.
+
+Danach `http://127.0.0.1:3000` aufrufen — es erscheint die Ersteinrichtung.
+
+### Erreichbarkeit für einen ersten Test
+
+Die Vorgabe bindet den Port an `127.0.0.1`, die Anwendung ist also nur auf dem
+Server selbst erreichbar; nach außen veröffentlicht sie ein Reverse Proxy mit
+TLS. Wer erst einmal ohne Reverse Proxy ausprobieren will, setzt in `.env`:
+
+```bash
+BINDUNG=0.0.0.0
+```
+
+und startet mit `docker compose up -d` neu. Dann ist sie im Betriebsnetz unter
+`http://<server>:3000` erreichbar — **unverschlüsselt**. Das ist zum
+Ausprobieren vertretbar, nicht mit echten Betriebsratsdaten (Art. 32 DSGVO).
+
+Ohne Reverse Proxy und ohne diese Zeile lautet das Fehlerbild schlicht: der
+Server antwortet nicht. Das ist dann kein Fehler der Anwendung.
+
+## Wenn es nicht startet
+
+Zuerst der Blick auf die Dienste — der Migrationsdienst muss auf `Exited (0)`
+stehen, nicht auf `Exited (1)`:
+
+```bash
+docker compose ps -a
+docker compose logs migration
+docker compose logs app
+```
+
+| Meldung / Erscheinung | Ursache | Abhilfe |
+|---|---|---|
+| `P1013 … invalid port number in database URL` | `/` oder `+` im Datenbankpasswort. Die Portangabe ist **nicht** das Problem. | `rm .env geheimnisse/db_passwort`, dann `./vorbereiten.sh`. Achtung: Bei bereits angelegter Datenbank auch `docker compose down -v` — sonst behält Postgres das alte Passwort. |
+| `FEHLER: DATABASE_URL ist leer` | Keine `.env` neben der `docker-compose.yml` | `./vorbereiten.sh` |
+| `P1000 … authentication failed` | `.env` und `geheimnisse/db_passwort` passen nicht zusammen, oder die Datenbank wurde mit einem anderen Passwort angelegt | `docker compose down -v` (löscht den Datenbestand!), dann neu | 
+| `The database schema is not empty` | Migrationen wurden schon eingespielt | Kein Fehler, der Dienst darf beendet sein |
+| Container `app` ist dauerhaft `unhealthy` | Bindeadresse — betraf Fassungen vor dem Setzen von `HOSTNAME=0.0.0.0` im Dockerfile | Abbild neu bauen: `docker compose build --no-cache app` |
+| `unknown option: service_completed_successfully` o. Ä. | Altes `docker-compose` (Python, v1) | Compose v2 verwenden: `docker compose` statt `docker-compose` |
+| Browser: „Diese Seite funktioniert nicht" von einem anderen Rechner aus | Port an `127.0.0.1` gebunden (Vorgabe) | Siehe „Erreichbarkeit für einen ersten Test" |
+| Anmeldung scheitert mit `Invalid Server Actions request` | Reverse Proxy setzt einen anderen Hostnamen als der Browser sieht | In `.env`: `ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE="betriebsrat.betrieb.intern"` |
+| `exec /usr/bin/tini: exec format error` | Abbild für eine andere Prozessorarchitektur gebaut (z. B. auf einem Mac für einen amd64-Server) | Auf dem Zielserver bauen oder `docker buildx build --platform linux/amd64` |
+
+Ganz von vorn anfangen — **löscht den gesamten Datenbestand**:
+
+```bash
+docker compose down -v
+rm -f .env geheimnisse/db_passwort
+./vorbereiten.sh
+docker compose up -d --build
+```
 
 ## Ersteinrichtung
 

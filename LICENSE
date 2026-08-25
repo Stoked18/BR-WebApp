@@ -1,27 +1,38 @@
-BR-Cockpit – Verwaltungsanwendung für Betriebsräte
-Copyright (C) 2026 Betriebsrat Werk Solingen und Mitwirkende
+MIT License
 
-SPDX-License-Identifier: AGPL-3.0-or-later
+Copyright (c) 2026 RECHTEINHABER-EINTRAGEN
 
-Dieses Programm ist freie Software: Sie können es weitergeben und/oder
-verändern unter den Bedingungen der GNU Affero General Public License,
-veröffentlicht von der Free Software Foundation, entweder in Version 3 der
-Lizenz oder (nach Ihrer Wahl) einer späteren Version.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Dieses Programm wird in der Hoffnung verbreitet, dass es nützlich ist, jedoch
-OHNE JEDE GEWÄHRLEISTUNG – sogar ohne die implizite Gewährleistung der
-MARKTGÄNGIGKEIT oder EIGNUNG FÜR EINEN BESTIMMTEN ZWECK. Einzelheiten regelt
-die GNU Affero General Public License.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-Sie sollten eine Kopie der GNU Affero General Public License zusammen mit
-diesem Programm erhalten haben. Ist das nicht der Fall, finden Sie sie unter
-<https://www.gnu.org/licenses/agpl-3.0.html>.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --------------------------------------------------------------------------
-HINWEIS: Der vollständige Lizenztext ist dieser Datei noch beizufügen. Er
-konnte beim Anlegen des Projekts nicht abgerufen werden, weil kein
-Netzzugang zu gnu.org bestand. Vor einer Weitergabe des Programms ist der
-amtliche englische Text von <https://www.gnu.org/licenses/agpl-3.0.txt>
-unterhalb dieses Hinweises einzufügen – die AGPL verlangt die Mitlieferung
-des Lizenztextes.
---------------------------------------------------------------------------
+
+Unverbindliche deutsche Zusammenfassung – rechtlich maßgeblich ist allein der
+englische Text oben:
+
+Jede Person darf diese Software kostenlos nutzen, kopieren, verändern,
+zusammenführen, veröffentlichen, verbreiten, unterlizenzieren und verkaufen –
+privat wie gewerblich, mit oder ohne Offenlegung der eigenen Änderungen. Die
+einzige Bedingung ist, dass der obenstehende Urhebervermerk und der
+Lizenztext in Kopien oder wesentlichen Teilen der Software enthalten bleiben.
+
+Die Software wird ohne jede Gewährleistung bereitgestellt. Insbesondere wird
+nicht dafür eingestanden, dass die abgebildeten Fristen, Schwellenwerte und
+Verfahrensschritte im Einzelfall zutreffen. Sie ersetzt keine Rechtsberatung.
+Wer sie einsetzt, bleibt für die Einhaltung von BetrVG und Datenschutzrecht
+selbst verantwortlich.

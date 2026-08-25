@@ -161,7 +161,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main className="flex-1 px-6 py-6">{children}</main>
 
         <footer className="kein-druck border-t border-slate-200 px-6 py-3 text-xs text-slate-500">
-          BR-Cockpit · quelloffen unter AGPL-3.0 · betrieben im eigenen Rechenzentrum ·
+          BR-Cockpit · quelloffen unter der MIT-Lizenz · betrieben im eigenen Rechenzentrum ·
           Verantwortlich für die Verarbeitung ist nach § 79a S. 2 BetrVG der Arbeitgeber; die
           Nutzungshoheit liegt beim Betriebsrat.
         </footer>
