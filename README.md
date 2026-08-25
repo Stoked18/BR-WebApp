@@ -264,11 +264,16 @@ sich stützen kann:
 | Wirksamkeit der Einstellung „Ladungsfrist" | in der Verwaltung geändert, neue Sitzung angelegt, Wert in der Datenbank geprüft | bestanden |
 | Migration gegen leere Datenbank, anschließender Beispielbestand | `prisma migrate deploy` und Seed gegen frische PostgreSQL-Instanz | bestanden |
 | Laufzeit aus `next build --output standalone` | aus einer sauberen Kopie gestartet, Anmeldung und Datenbankzugriff geprüft | bestanden |
-| **Dockerfile und `docker-compose.yml`** | Dateiaufbau nachgestellt und geprüft; der Bau selbst **ungetestet**, in der Entwicklungsumgebung stand kein Docker-Daemon zur Verfügung | **vor dem Einsatz nachzuholen** |
+| Dockerfile und `docker-compose.yml` | `docker compose up -d --build` aus einem frischen Clone: alle drei Dienste hochgefahren, `migration` auf `Exited (0)`, `app` auf `healthy`, Ersteinrichtung im Browser durchlaufen, Neustart und zweiter Migrationslauf idempotent | bestanden¹ |
 | Einrichtungsskript des Devcontainers | gegen leere und gegen befüllte Datenbank ausgeführt | bestanden |
 | Devcontainer als Ganzes in Codespaces | vom Betriebsrat selbst aufgerufen | bestanden |
 | Abhängigkeiten | `npm audit` | 0 Schwachstellen |
 
-Die fett hervorgehobene Zeile ist vor dem ersten Einsatz nachzuholen: ein
-`docker compose up -d --build` auf dem Zielserver, danach ein Aufruf von
-`/einrichtung`.
+¹ Mit einer Einschränkung: Die Prüfumgebung kam nicht an die Debian-Paketquellen
+heran, deshalb lief der Bau dort auf `node:22-bookworm` statt auf
+`node:22-bookworm-slim`. Beide sind dasselbe Debian bookworm mit demselben
+Node 22; im nicht-schlanken Abbild sind `openssl` und `ca-certificates` bereits
+enthalten, sodass die `apt-get`-Zeile entfallen konnte. Alles Übrige — die
+Stufen, die COPY-Schritte, `HOSTNAME`, die HEALTHCHECK, das Zusammenspiel der
+drei Dienste — war unverändert. Ungeprüft bleibt damit allein, ob
+`apt-get install openssl ca-certificates` durchläuft.

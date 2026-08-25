@@ -1,0 +1,12 @@
+# Diese Anwendung fuehrt Unterlagen des Betriebsrats. Sie unterliegen der
+# Geheimhaltungspflicht nach § 79 BetrVG und gehoeren unter keinen Umstaenden
+# in einen Suchmaschinenindex.
+#
+# Der Schutz liegt nicht hier: die Anwendung ist nur im Betriebsnetz erreichbar
+# und verlangt vor jedem Inhalt eine Anmeldung. Diese Datei ist die zweite
+# Sicherung fuer den Fall, dass ein Reverse Proxy versehentlich nach aussen
+# geoeffnet wird. Ergaenzend setzt src/app/layout.tsx den Kopf
+# "robots: noindex, nofollow" auf jeder Seite.
+
+User-agent: *
+Disallow: /

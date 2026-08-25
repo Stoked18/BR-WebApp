@@ -5,7 +5,14 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev && cp -R node_modules /produktiv_module && npm ci
+# Ein einziger Lauf mit allen Abhaengigkeiten. Frueher stand hier zusaetzlich
+# ein "npm ci --omit=dev && cp -R node_modules /produktiv_module": dieser
+# Produktivbaum wurde von keiner spaeteren Stufe je uebernommen (kein COPY
+# --from darauf) und war reine Verschwendung – zwei vollstaendige Installationen
+# und ein Kopiervorgang ueber ein Gigabyte. Gebraucht werden die vollen
+# Abhaengigkeiten ohnehin, weil die Bau-Stufe damit uebersetzt; was zur Laufzeit
+# noetig ist, buendelt der Standalone-Build selbst.
+RUN npm ci
 
 FROM node:22-bookworm-slim AS bau
 WORKDIR /app
@@ -14,7 +21,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 COPY --from=abhaengigkeiten /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npx prisma generate && npx next build
+# public/ anlegen, falls es fehlt. Git verfolgt keine leeren Verzeichnisse:
+# enthaelt public/ einmal keine Datei mehr, fehlt es im Clone, und der COPY in
+# der Betriebsstufe bricht den Bau ab mit
+#   failed to compute cache key: "/app/public": not found
+# Ein mkdir hier macht den Bau davon unabhaengig.
+RUN mkdir -p public && npx prisma generate && npx next build
 
 FROM node:22-bookworm-slim AS betrieb
 WORKDIR /app
@@ -42,11 +54,15 @@ ENV HOSTNAME=0.0.0.0
 # Abhaengigkeiten nach sich (u. a. "effect"), die im schlanken Abbild fehlen
 # wuerden. Die Migrationen laufen deshalb in einem eigenen Dienst, siehe
 # docker-compose.yml.
-COPY --from=bau /app/public ./public
-COPY --from=bau /app/.next/standalone ./
-COPY --from=bau /app/.next/static ./.next/static
+# Eigentuemer gleich beim Kopieren setzen. Ein nachtraegliches
+# "chown -R ... /app" wuerde jede Datei erneut schreiben und damit eine zweite
+# vollstaendige Schicht ueber den rund 105 MB des Standalone-Bundles anlegen –
+# das Abbild waere ohne jeden Gegenwert etwa ein Drittel groesser.
+COPY --from=bau --chown=brcockpit:brcockpit /app/public ./public
+COPY --from=bau --chown=brcockpit:brcockpit /app/.next/standalone ./
+COPY --from=bau --chown=brcockpit:brcockpit /app/.next/static ./.next/static
 
-RUN mkdir -p /var/lib/br-cockpit/data && chown -R brcockpit:brcockpit /var/lib/br-cockpit /app
+RUN mkdir -p /var/lib/br-cockpit/data && chown brcockpit:brcockpit /var/lib/br-cockpit /var/lib/br-cockpit/data
 
 USER brcockpit
 EXPOSE 3000
