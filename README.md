@@ -3,11 +3,19 @@
 Verwaltungsanwendung für Betriebsräte. Quelloffen, ohne Cloud-Anbindung, für den
 Betrieb im eigenen Rechenzentrum.
 
-Entwickelt für einen Betrieb der Medizintechnik in Nordrhein-Westfalen:
+Entstanden für einen Betrieb der Medizintechnik in Nordrhein-Westfalen:
 Kunststoffspritzguss und Montage, rund 700 Beschäftigte, vollkontinuierlicher
 Schichtbetrieb an 350 Tagen im Jahr, dreizehnköpfiger Betriebsrat aus
 Personenwahl, Zugehörigkeit zu einem börsennotierten Konzern, Aufsichtsrat in
 Vorbereitung.
+
+**Auf diesen Betrieb festgelegt ist sie nicht.** Beim ersten Aufruf fragt die
+Anwendung Betrieb, Bundesland und Gremiumsgröße ab; das Bundesland steuert die
+Feiertage und damit jede Fristberechnung, alle sechzehn sind hinterlegt. Die
+Gremiumsgröße wird auf Wunsch nach § 9 BetrVG aus der Zahl der Wahlberechtigten
+berechnet. Ladungsfrist und Einwendungsfrist gegen die Niederschrift lassen sich
+an die eigene Geschäftsordnung anpassen. Andere Betriebsräte dürfen sie
+uneingeschränkt nutzen und verändern — siehe [Lizenz](#lizenz).
 
 ![Sitzungsansicht](docs/bilder/sitzung.png)
 

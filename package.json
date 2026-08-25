@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "BR-Cockpit – Open-Source-Verwaltungsanwendung fuer Betriebsraete (BetrVG, DSGVO, On-Premise)",
+  "author": "Stoked18",
   "license": "MIT",
   "scripts": {
     "dev": "next dev",
