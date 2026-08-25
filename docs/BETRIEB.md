@@ -55,6 +55,58 @@ Ausprobieren vertretbar, nicht mit echten Betriebsratsdaten (Art. 32 DSGVO).
 Ohne Reverse Proxy und ohne diese Zeile lautet das Fehlerbild schlicht: der
 Server antwortet nicht. Das ist dann kein Fehler der Anwendung.
 
+### Der Reverse Proxy muss `X-Forwarded-Proto` setzen
+
+Das ist keine Empfehlung, sondern eine Betriebsbedingung. Das Sitzungs-Cookie
+trägt das Merkmal `Secure` genau dann, wenn die Verbindung zum Browser über TLS
+läuft — und woran die Anwendung das erkennt, ist allein diese Kopfzeile.
+
+Der Grund: Zwischen Proxy und Container läuft die Strecke unverschlüsselt. Der
+Container sieht also von sich aus nur HTTP. Der Next.js-Server ergänzt fehlende
+`X-Forwarded-*`-Kopfzeilen selbstständig mit den Werten der tatsächlichen
+Verbindung — nachgemessen im laufenden Container:
+
+| Aufbau | `x-forwarded-proto` |
+|---|---|
+| ohne Proxy, direkt über HTTP | `http` — vom Server ergänzt |
+| TLS-Proxy davor, Kopfzeile gesetzt | `https` — vom Proxy |
+| TLS-Proxy davor, Kopfzeile **nicht** gesetzt | `http` — vom Server ergänzt, **falsch** |
+
+Im dritten Fall ließe die Anwendung `Secure` weg, obwohl der Browser über HTTPS
+spricht. Caddy und Traefik setzen die Kopfzeile von sich aus; nginx braucht die
+Zeile ausdrücklich:
+
+```nginx
+location / {
+    proxy_pass         http://127.0.0.1:3000;
+    proxy_set_header   Host              $host;
+    proxy_set_header   X-Forwarded-Proto $scheme;   # ohne diese Zeile: kein Secure
+    proxy_set_header   X-Forwarded-Host  $host;
+    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+}
+```
+
+Wer sichergehen will, erzwingt das Merkmal unabhängig von den Kopfzeilen — in
+`.env`:
+
+```bash
+SITZUNG_COOKIE_SECURE=ja
+```
+
+Empfohlen für jeden Betrieb hinter TLS. Vorgabe ist `auto`, also die Erkennung
+über die Kopfzeile.
+
+Prüfen lässt sich das Ergebnis ohne Werkzeuge: Bei der Anmeldung schreibt die
+Anwendung eine Zeile ins Protokoll, sobald sie eine Sitzung **ohne** `Secure`
+vergibt:
+
+```bash
+docker compose logs app | grep Sitzung
+```
+
+Im Erprobungsbetrieb ohne Proxy ist diese Zeile erwartet. Erscheint sie im
+Regelbetrieb hinter TLS, setzt der Proxy `X-Forwarded-Proto` nicht.
+
 ## Wenn es nicht startet
 
 Zuerst der Blick auf die Dienste — der Migrationsdienst muss auf `Exited (0)`
@@ -75,6 +127,7 @@ docker compose logs app
 | Container `app` ist dauerhaft `unhealthy` | Bindeadresse — betraf Fassungen vor dem Setzen von `HOSTNAME=0.0.0.0` im Dockerfile | Abbild neu bauen: `docker compose build --no-cache app` |
 | `unknown option: service_completed_successfully` o. Ä. | Altes `docker-compose` (Python, v1) | Compose v2 verwenden: `docker compose` statt `docker-compose` |
 | Browser: „Diese Seite funktioniert nicht" von einem anderen Rechner aus | Port an `127.0.0.1` gebunden (Vorgabe) | Siehe „Erreichbarkeit für einen ersten Test" |
+| Anmeldung gelingt, führt aber sofort auf die Anmeldemaske zurück | Das Sitzungs-Cookie trägt `Secure`, die Verbindung läuft aber über Klartext-HTTP — der Browser hält es dann zurück. Betraf Fassungen, in denen `Secure` an `NODE_ENV` hing. | Abbild neu bauen. Prüfen: `SITZUNG_COOKIE_SECURE` muss für den Betrieb ohne TLS auf `auto` oder `nein` stehen, nicht auf `ja`. Siehe „Der Reverse Proxy muss `X-Forwarded-Proto` setzen". |
 | Anmeldung scheitert mit `Invalid Server Actions request` | Reverse Proxy setzt einen anderen Hostnamen als der Browser sieht | In `.env`: `ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE="betriebsrat.betrieb.intern"` |
 | `exec /usr/bin/tini: exec format error` | Abbild für eine andere Prozessorarchitektur gebaut (z. B. auf einem Mac für einen amd64-Server) | Auf dem Zielserver bauen oder `docker buildx build --platform linux/amd64` |
 

@@ -16,6 +16,7 @@ import { ipPseudonym, sha256 } from './krypto';
 import { protokolliere } from './audit';
 import { pruefePasswort } from './passwort';
 import { darf, type Recht, type Sitzungsbenutzer } from './authz';
+import { meldeUnverschluesselteSitzung, verbindungIstVerschluesselt } from './verbindung';
 
 const COOKIE = 'br_sitzung';
 const GUELTIGKEIT_STUNDEN = 10; // etwa eine Schicht plus Puffer
@@ -98,11 +99,17 @@ export async function melde_an(email: string, passwort: string): Promise<Anmelde
     }),
   ]);
 
+  // Nicht an NODE_ENV, sondern am tatsaechlichen Protokoll der Anfrage. Das
+  // Container-Abbild setzt NODE_ENV=production; das sagt aber nichts darueber,
+  // ob der Browser ueber TLS spricht. Siehe src/lib/verbindung.ts.
+  const ueberTls = verbindungIstVerschluesselt(kopfzeilen);
+  meldeUnverschluesselteSitzung(ueberTls);
+
   const kekse = await cookies();
   kekse.set(COOKIE, roh, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: ueberTls,
     path: '/',
     expires: laeuftAbAm,
   });

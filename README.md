@@ -186,7 +186,7 @@ und einen Beschluss mit sechs Ja-Stimmen unter „Mehrheit der Mitglieder"
 erfassen — er wird abgelehnt, obwohl die einfache Mehrheit gereicht hätte.
 
 ```bash
-npm test          # 146 Tests zur Rechts- und Berechtigungslogik
+npm test          # 161 Tests zur Rechts- und Berechtigungslogik
 npm run typecheck
 ```
 
@@ -255,13 +255,14 @@ sich stützen kann:
 
 | Bestandteil | Verfahren | Ergebnis |
 | --- | --- | --- |
-| Fristen, Feiertage, BetrVG-Schwellenwerte, Anwesenheit, Berechtigungen, Rollenvergabe, Löschplan, Einstellungen | 146 Modultests | bestanden |
+| Fristen, Feiertage, BetrVG-Schwellenwerte, Anwesenheit, Berechtigungen, Rollenvergabe, Löschplan, Einstellungen, Cookie-Sicherheit | 161 Modultests | bestanden |
 | Vollständigkeit des Löschplans gegenüber dem Datenmodell | Test vergleicht ihn gegen `schema.prisma`; eine neue Tabelle ohne Zuordnung lässt ihn fehlschlagen | bestanden |
 | Typisierung des gesamten Quelltexts | `tsc --noEmit` | fehlerfrei |
 | Erzeugung aller 27 Seiten | `next build` | fehlerfrei |
 | Anmeldung, Rollentrennung, Sitzungsablauf, Nachrücken, Beschlussfassung, Antragsportal | Chromium gegen die laufende Anwendung | bestanden |
 | Verwaltung: Zugang für alle neun Rollen, Betriebs- und Gremiumsdaten, Einstellungen, Benutzerverwaltung, Kennwortwechsel, beide Löschstufen | Chromium gegen eine Kopie der Datenbank | bestanden |
 | Wirksamkeit der Einstellung „Ladungsfrist" | in der Verwaltung geändert, neue Sitzung angelegt, Wert in der Datenbank geprüft | bestanden |
+| `Secure` am Sitzungs-Cookie | am laufenden Container: ohne Proxy, hinter `X-Forwarded-Proto: https`, hinter `http` und mit erzwungenem `SITZUNG_COOKIE_SECURE=ja` — jeweils der rohe `Set-Cookie` gelesen | bestanden |
 | Migration gegen leere Datenbank, anschließender Beispielbestand | `prisma migrate deploy` und Seed gegen frische PostgreSQL-Instanz | bestanden |
 | Laufzeit aus `next build --output standalone` | aus einer sauberen Kopie gestartet, Anmeldung und Datenbankzugriff geprüft | bestanden |
 | Dockerfile und `docker-compose.yml` | `docker compose up -d --build` aus einem frischen Clone: alle drei Dienste hochgefahren, `migration` auf `Exited (0)`, `app` auf `healthy`, Ersteinrichtung im Browser durchlaufen, Neustart und zweiter Migrationslauf idempotent | bestanden¹ |

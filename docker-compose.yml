@@ -80,6 +80,9 @@ services:
       DOKUMENT_SCHLUESSEL: ${DOKUMENT_SCHLUESSEL}
       DATA_DIR: /var/lib/br-cockpit/data
       BUNDESLAND: ${BUNDESLAND:-NW}
+      # Steuert das Merkmal "Secure" am Sitzungs-Cookie. Vorgabe "auto": aus
+      # der Kopfzeile X-Forwarded-Proto des Reverse Proxy. Siehe docs/BETRIEB.md.
+      SITZUNG_COOKIE_SECURE: ${SITZUNG_COOKIE_SECURE:-auto}
     volumes:
       - dokumente:/var/lib/br-cockpit/data
     # Vorgabe: nur auf dem Server selbst erreichbar – die Veroeffentlichung im

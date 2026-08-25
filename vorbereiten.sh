@@ -79,6 +79,12 @@ BUNDESLAND="${BUNDESLAND_WERT}"
 BINDUNG=127.0.0.1
 PORT_AUSSEN=3000
 
+# Merkmal "Secure" am Sitzungs-Cookie: auto (aus X-Forwarded-Proto), ja, nein.
+# Hinter einem TLS-Reverse-Proxy ist "ja" die sichere Wahl; fuer die Erprobung
+# ueber eine LAN-Adresse ohne Proxy muss es "auto" oder "nein" bleiben, sonst
+# haelt der Browser das Cookie zurueck. Siehe docs/BETRIEB.md.
+SITZUNG_COOKIE_SECURE=auto
+
 # Nur noetig, wenn Formulare hinter dem eigenen Reverse Proxy mit
 # "Invalid Server Actions request" scheitern: die extern sichtbare Adresse.
 ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE=""
