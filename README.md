@@ -262,6 +262,7 @@ sich stützen kann:
 | Anmeldung, Rollentrennung, Sitzungsablauf, Nachrücken, Beschlussfassung, Antragsportal | Chromium gegen die laufende Anwendung | bestanden |
 | Verwaltung: Zugang für alle neun Rollen, Betriebs- und Gremiumsdaten, Einstellungen, Benutzerverwaltung, Kennwortwechsel, beide Löschstufen | Chromium gegen eine Kopie der Datenbank | bestanden |
 | Wirksamkeit der Einstellung „Ladungsfrist" | in der Verwaltung geändert, neue Sitzung angelegt, Wert in der Datenbank geprüft | bestanden |
+| Herkunftsprüfung der Server Actions | am laufenden Container: Anmeldung mit fremder `Origin` vor dem Neu-Bau abgewiesen (500), nach `docker compose build app` mit dem Bauargument angenommen (303), eine nicht eingetragene Herkunft weiterhin abgewiesen | bestanden |
 | `Secure` am Sitzungs-Cookie | am laufenden Container: ohne Proxy, hinter `X-Forwarded-Proto: https`, hinter `http` und mit erzwungenem `SITZUNG_COOKIE_SECURE=ja` — jeweils der rohe `Set-Cookie` gelesen | bestanden |
 | Migration gegen leere Datenbank, anschließender Beispielbestand | `prisma migrate deploy` und Seed gegen frische PostgreSQL-Instanz | bestanden |
 | Laufzeit aus `next build --output standalone` | aus einer sauberen Kopie gestartet, Anmeldung und Datenbankzugriff geprüft | bestanden |

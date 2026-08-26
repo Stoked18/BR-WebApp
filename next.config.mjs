@@ -1,5 +1,10 @@
 // Zusaetzliche Herkunftsadressen fuer Server Actions (z. B. der eigene
 // Produktivname hinter einem Reverse Proxy), kommagetrennt ueber die Umgebung.
+//
+// ACHTUNG, Bauzeit: Diese Datei wird beim Uebersetzen ausgewertet, und die
+// fertige Liste landet fest im erzeugten server.js. Die Variable muss deshalb
+// schon beim "next build" gesetzt sein – im Container als Bauargument, siehe
+// Dockerfile und docker-compose.yml. Zur Laufzeit gesetzt bleibt sie wirkungslos.
 const zusaetzlicheUrsprungsAdressen = (process.env.ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE ?? '')
   .split(',')
   .map((s) => s.trim())

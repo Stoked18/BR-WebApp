@@ -21,6 +21,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 COPY --from=abhaengigkeiten /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Zusaetzliche Herkunftsadressen fuer Server Actions.
+#
+# Muss ein Bauargument sein, keine Laufzeitvariable: next.config.mjs liest die
+# Umgebungsvariable beim Uebersetzen aus und schreibt die fertige Liste in das
+# erzeugte server.js. Zur Laufzeit gesetzt bewirkt sie deshalb nichts – der
+# Wert steht dann laengst fest. Eine Aenderung wirkt erst nach
+# "docker compose build app".
+#
+# Die Zeile steht bewusst unmittelbar vor dem Uebersetzen: nur diese Schicht
+# und die folgenden werden bei einer Aenderung neu gebaut, die
+# Abhaengigkeitsinstallation darueber bleibt im Zwischenspeicher.
+ARG ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE=""
+ENV ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE=${ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE}
 # public/ anlegen, falls es fehlt. Git verfolgt keine leeren Verzeichnisse:
 # enthaelt public/ einmal keine Datei mehr, fehlt es im Clone, und der COPY in
 # der Betriebsstufe bricht den Bau ab mit

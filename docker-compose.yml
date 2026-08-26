@@ -35,6 +35,12 @@ services:
     build:
       context: .
       target: bau
+      # Dasselbe Argument wie beim Dienst "app". Der Migrationsdienst braucht
+      # es nicht – er ruft nur prisma auf –, aber beide Dienste bauen dieselbe
+      # Stufe. Mit unterschiedlichen Argumenten haetten sie unterschiedliche
+      # Zwischenspeicher-Schluessel, und das Uebersetzen liefe zweimal.
+      args:
+        ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE: ${ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE:-}
     restart: "no"
     # Die Vorabpruefung erspart die irrefuehrendste Fehlermeldung dieses
     # Aufbaus: enthaelt das Datenbankpasswort ein "/" oder "+", meldet Prisma
@@ -67,7 +73,13 @@ services:
     networks: [intern]
 
   app:
-    build: .
+    build:
+      context: .
+      # Bauargument, keine Laufzeitvariable: next.config.mjs wertet die Adresse
+      # beim Uebersetzen aus (siehe Dockerfile). Eine Aenderung in .env wirkt
+      # deshalb erst nach "docker compose build app", nicht nach "up -d app".
+      args:
+        ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE: ${ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE:-}
     restart: unless-stopped
     depends_on:
       db:

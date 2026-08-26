@@ -74,17 +74,8 @@ Verbindung — nachgemessen im laufenden Container:
 
 Im dritten Fall ließe die Anwendung `Secure` weg, obwohl der Browser über HTTPS
 spricht. Caddy und Traefik setzen die Kopfzeile von sich aus; nginx braucht die
-Zeile ausdrücklich:
-
-```nginx
-location / {
-    proxy_pass         http://127.0.0.1:3000;
-    proxy_set_header   Host              $host;
-    proxy_set_header   X-Forwarded-Proto $scheme;   # ohne diese Zeile: kein Secure
-    proxy_set_header   X-Forwarded-Host  $host;
-    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-}
-```
+Zeile ausdrücklich — die vollständige Beispielkonfiguration steht unten unter
+[Reverse Proxy](#reverse-proxy) und enthält sie bereits.
 
 Wer sichergehen will, erzwingt das Merkmal unabhängig von den Kopfzeilen — in
 `.env`:
@@ -128,7 +119,7 @@ docker compose logs app
 | `unknown option: service_completed_successfully` o. Ä. | Altes `docker-compose` (Python, v1) | Compose v2 verwenden: `docker compose` statt `docker-compose` |
 | Browser: „Diese Seite funktioniert nicht" von einem anderen Rechner aus | Port an `127.0.0.1` gebunden (Vorgabe) | Siehe „Erreichbarkeit für einen ersten Test" |
 | Anmeldung gelingt, führt aber sofort auf die Anmeldemaske zurück | Das Sitzungs-Cookie trägt `Secure`, die Verbindung läuft aber über Klartext-HTTP — der Browser hält es dann zurück. Betraf Fassungen, in denen `Secure` an `NODE_ENV` hing. | Abbild neu bauen. Prüfen: `SITZUNG_COOKIE_SECURE` muss für den Betrieb ohne TLS auf `auto` oder `nein` stehen, nicht auf `ja`. Siehe „Der Reverse Proxy muss `X-Forwarded-Proto` setzen". |
-| Anmeldung scheitert mit `Invalid Server Actions request` | Reverse Proxy setzt einen anderen Hostnamen als der Browser sieht | In `.env`: `ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE="betriebsrat.betrieb.intern"` |
+| Anmeldung scheitert mit `Invalid Server Actions request` | Reverse Proxy gibt einen anderen `Host` weiter, als der Browser aufruft | In `.env` `ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE` setzen und **neu bauen** (`docker compose build app`) — ein Neustart genügt nicht. Einzelheiten unter [Reverse Proxy](#wenn-formulare-mit-invalid-server-actions-request-scheitern). |
 | `exec /usr/bin/tini: exec format error` | Abbild für eine andere Prozessorarchitektur gebaut (z. B. auf einem Mac für einen amd64-Server) | Auf dem Zielserver bauen oder `docker buildx build --platform linux/amd64` |
 
 Ganz von vorn anfangen — **löscht den gesamten Datenbestand**:
@@ -290,6 +281,42 @@ Der Proxy sollte **keine** Zugriffsprotokolle mit vollständigen Pfaden
 schreiben, weil sich daraus Rückschlüsse auf laufende Verfahren ziehen lassen —
 und die Proxy-Protokolle liegen typischerweise bei der IT des Arbeitgebers.
 Entweder Protokollierung abschalten oder auf Statuscodes ohne Pfade beschränken.
+
+### Wenn Formulare mit „Invalid Server Actions request" scheitern
+
+Next.js prüft bei jedem abgeschickten Formular, ob die Herkunftsadresse des
+Browsers (`Origin`) zum Hostnamen passt, unter dem der Server sich sieht. Das
+ist ein Schutz gegen websiteübergreifende Anfragen. Passt beides nicht
+zusammen, bricht die Anwendung mit `Invalid Server Actions request` ab — am
+sichtbarsten bei der Anmeldung.
+
+Mit der Konfiguration oben tritt das **nicht** auf: `proxy_set_header Host
+$host` reicht den öffentlichen Namen durch, Herkunft und Hostname stimmen
+überein. Nötig wird die folgende Einstellung erst, wenn der Proxy einen anderen
+`Host` weitergibt als der Browser aufruft — etwa weil er auf den internen
+Dienstnamen umschreibt. Dann die extern sichtbare Adresse in `.env` eintragen,
+mehrere durch Komma getrennt:
+
+```bash
+ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE="betriebsrat.betrieb.intern"
+```
+
+> **Diese Einstellung wirkt erst nach einem Neu-Bau.** Sie wird beim Übersetzen
+> ausgewertet und steht danach fest im erzeugten Server; ein `docker compose up
+> -d app` genügt **nicht**:
+>
+> ```bash
+> docker compose build app     # zwingend – hier wird der Wert eingebaut
+> docker compose up -d app
+> ```
+>
+> Das Bauargument reicht `docker-compose.yml` an das Dockerfile durch. Ob der
+> Wert angekommen ist, lässt sich am fertigen Abbild ablesen:
+>
+> ```bash
+> docker compose run --rm --entrypoint sh app -c \
+>   'grep -o "\"allowedOrigins\":\[[^]]*\]" server.js'
+> ```
 
 ## Aktualisierung
 

@@ -87,6 +87,8 @@ SITZUNG_COOKIE_SECURE=auto
 
 # Nur noetig, wenn Formulare hinter dem eigenen Reverse Proxy mit
 # "Invalid Server Actions request" scheitern: die extern sichtbare Adresse.
+# Wirkt erst nach "docker compose build app" – der Wert wird beim Uebersetzen
+# eingebaut, ein blosser Neustart genuegt nicht. Siehe docs/BETRIEB.md.
 ZUSAETZLICHE_SERVER_ACTION_URSPRUENGE=""
 ENDE
 
